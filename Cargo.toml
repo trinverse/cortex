@@ -48,3 +48,13 @@ panic = "abort"
 [profile.dev]
 opt-level = 0
 debug = true
+incremental = true
+
+# Faster builds for development
+[profile.dev.package."*"]
+opt-level = 0
+
+# Fast development builds with some optimization
+[profile.dev-opt]
+inherits = "dev"
+opt-level = 2
