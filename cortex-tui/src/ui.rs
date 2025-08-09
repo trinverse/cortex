@@ -150,30 +150,37 @@ impl UI {
     }
 
     fn draw_command_line(frame: &mut Frame, area: Rect, app: &AppState) {
-        let border_color = if app.command_mode {
-            Color::Cyan
+        let (border_color, title) = if app.command_mode {
+            (Color::Cyan, " Command Mode (ESC to exit) ")
         } else {
-            Color::Gray
+            (Color::Gray, " Press Ctrl+O or : to enter command mode ")
         };
         
         let block = Block::default()
+            .title(title)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(border_color));
 
         let inner_area = block.inner(area);
         frame.render_widget(block, area);
 
-        let prompt = "$ ";
+        let prompt = if app.command_mode {
+            "$ "
+        } else {
+            "$ (Ctrl+O to activate) "
+        };
+        
         let text = format!("{}{}", prompt, app.command_line);
         let paragraph = Paragraph::new(text)
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(if app.command_mode { Color::White } else { Color::DarkGray }));
         
         frame.render_widget(paragraph, inner_area);
         
         // Set cursor position when in command mode
         if app.command_mode {
+            let actual_prompt = "$ ";
             frame.set_cursor_position((
-                inner_area.x + prompt.len() as u16 + app.command_cursor as u16,
+                inner_area.x + actual_prompt.len() as u16 + app.command_cursor as u16,
                 inner_area.y,
             ));
         }
