@@ -130,6 +130,7 @@ impl KeyBinding {
             (KeyCode::Char('4'), KeyModifiers::ALT) => Some(Self::SortByExt),
             
             (KeyCode::Char(':'), _) => Some(Self::CommandMode),
+            (KeyCode::Char('o'), KeyModifiers::CONTROL) => Some(Self::CommandMode),
             (KeyCode::Esc, _) => Some(Self::CancelCommand),
             
             _ => None,

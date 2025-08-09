@@ -179,8 +179,20 @@ impl HelpDialog {
             ("".to_string(), "".to_string()),
             ("Other".to_string(), "".to_string()),
             ("F1".to_string(), "This help".to_string()),
+            ("Ctrl+O / :".to_string(), "Command mode".to_string()),
             ("Ctrl+R".to_string(), "Refresh panels".to_string()),
             ("Ctrl+Q".to_string(), "Quit".to_string()),
+            ("".to_string(), "".to_string()),
+            ("Command Mode".to_string(), "".to_string()),
+            ("%f".to_string(), "Current file".to_string()),
+            ("%F".to_string(), "Marked files".to_string()),
+            ("%d".to_string(), "Current directory".to_string()),
+            ("%D".to_string(), "Other panel directory".to_string()),
+            ("Tab".to_string(), "Insert current file".to_string()),
+            ("↑/↓".to_string(), "Command history".to_string()),
+            ("Ctrl+U".to_string(), "Clear line".to_string()),
+            ("Ctrl+W".to_string(), "Delete word".to_string()),
+            ("ESC".to_string(), "Exit command mode".to_string()),
         ];
 
         Self {

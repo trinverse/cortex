@@ -26,9 +26,9 @@ impl UI {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(chunks[0]);
 
-        Self::draw_panel(frame, panels[0], &app.left_panel, app.active_panel == ActivePanel::Left);
-        Self::draw_panel(frame, panels[1], &app.right_panel, app.active_panel == ActivePanel::Right);
-        Self::draw_command_line(frame, chunks[1], &app.command_line);
+        Self::draw_panel(frame, panels[0], &app.left_panel, app.active_panel == ActivePanel::Left && !app.command_mode);
+        Self::draw_panel(frame, panels[1], &app.right_panel, app.active_panel == ActivePanel::Right && !app.command_mode);
+        Self::draw_command_line(frame, chunks[1], app);
         Self::draw_status_bar(frame, chunks[2], app);
     }
 
@@ -149,25 +149,34 @@ impl UI {
         result
     }
 
-    fn draw_command_line(frame: &mut Frame, area: Rect, command: &str) {
+    fn draw_command_line(frame: &mut Frame, area: Rect, app: &AppState) {
+        let border_color = if app.command_mode {
+            Color::Cyan
+        } else {
+            Color::Gray
+        };
+        
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Gray));
+            .border_style(Style::default().fg(border_color));
 
         let inner_area = block.inner(area);
         frame.render_widget(block, area);
 
-        let prompt = if command.is_empty() {
-            "$ "
-        } else {
-            ""
-        };
-
-        let text = format!("{}{}", prompt, command);
+        let prompt = "$ ";
+        let text = format!("{}{}", prompt, app.command_line);
         let paragraph = Paragraph::new(text)
             .style(Style::default().fg(Color::White));
         
         frame.render_widget(paragraph, inner_area);
+        
+        // Set cursor position when in command mode
+        if app.command_mode {
+            frame.set_cursor_position((
+                inner_area.x + prompt.len() as u16 + app.command_cursor as u16,
+                inner_area.y,
+            ));
+        }
     }
 
     fn draw_status_bar(frame: &mut Frame, area: Rect, app: &AppState) {

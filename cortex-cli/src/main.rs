@@ -11,7 +11,9 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{io, path::PathBuf, time::Duration};
 use tokio::sync::mpsc;
 
+mod command;
 mod operations;
+use command::CommandProcessor;
 use operations::OperationManager;
 
 #[derive(Parser, Debug)]
@@ -103,6 +105,10 @@ impl App {
                         if !self.handle_dialog_input(key_event).await? {
                             break;
                         }
+                    } else if self.state.command_mode {
+                        if !self.handle_command_mode_input(key_event).await? {
+                            break;
+                        }
                     } else if let Some(binding) = KeyBinding::from_key_event(key_event) {
                         if !self.handle_input(binding).await? {
                             break;
@@ -117,6 +123,167 @@ impl App {
         }
         
         Ok(())
+    }
+
+    async fn handle_command_mode_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        use crossterm::event::KeyModifiers;
+        
+        match key.code {
+            KeyCode::Esc => {
+                // Exit command mode
+                self.state.command_mode = false;
+                self.state.command_line.clear();
+                self.state.command_cursor = 0;
+                self.state.command_history_index = None;
+            }
+            KeyCode::Enter => {
+                // Execute command
+                if !self.state.command_line.is_empty() {
+                    let command = self.state.command_line.clone();
+                    
+                    // Add to history
+                    self.state.command_history.push(command.clone());
+                    
+                    // Check for cd command
+                    if command.starts_with("cd ") {
+                        let path = &command[3..].trim();
+                        if let Some(new_dir) = CommandProcessor::parse_cd_path(
+                            path, 
+                            &self.state.active_panel().current_dir
+                        ) {
+                            let panel = self.state.active_panel_mut();
+                            panel.current_dir = new_dir;
+                            panel.selected_index = 0;
+                            panel.view_offset = 0;
+                            Self::refresh_panel(panel)?;
+                        } else {
+                            self.state.set_status_message(format!("cd: cannot access '{}': No such directory", path));
+                        }
+                    } else if command == "exit" || command == "quit" {
+                        return Ok(false);
+                    } else {
+                        // Execute external command
+                        match CommandProcessor::execute_command(&command, &self.state).await {
+                            Ok(output) => {
+                                if !output.is_empty() {
+                                    self.state.set_status_message(output);
+                                }
+                            }
+                            Err(e) => {
+                                self.state.set_status_message(format!("Error: {}", e));
+                            }
+                        }
+                    }
+                    
+                    self.state.command_line.clear();
+                    self.state.command_cursor = 0;
+                    self.state.command_mode = false;
+                    self.state.command_history_index = None;
+                }
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Clear line
+                self.state.command_line.clear();
+                self.state.command_cursor = 0;
+            }
+            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Delete word before cursor
+                if self.state.command_cursor > 0 {
+                    let mut pos = self.state.command_cursor - 1;
+                    // Skip trailing spaces
+                    while pos > 0 && self.state.command_line.chars().nth(pos) == Some(' ') {
+                        pos -= 1;
+                    }
+                    // Find word boundary
+                    while pos > 0 && self.state.command_line.chars().nth(pos - 1) != Some(' ') {
+                        pos -= 1;
+                    }
+                    self.state.command_line.drain(pos..self.state.command_cursor);
+                    self.state.command_cursor = pos;
+                }
+            }
+            KeyCode::Char(c) => {
+                // Insert character
+                self.state.command_line.insert(self.state.command_cursor, c);
+                self.state.command_cursor += 1;
+            }
+            KeyCode::Backspace => {
+                // Delete character before cursor
+                if self.state.command_cursor > 0 {
+                    self.state.command_cursor -= 1;
+                    self.state.command_line.remove(self.state.command_cursor);
+                }
+            }
+            KeyCode::Delete => {
+                // Delete character at cursor
+                if self.state.command_cursor < self.state.command_line.len() {
+                    self.state.command_line.remove(self.state.command_cursor);
+                }
+            }
+            KeyCode::Left => {
+                // Move cursor left
+                if self.state.command_cursor > 0 {
+                    self.state.command_cursor -= 1;
+                }
+            }
+            KeyCode::Right => {
+                // Move cursor right
+                if self.state.command_cursor < self.state.command_line.len() {
+                    self.state.command_cursor += 1;
+                }
+            }
+            KeyCode::Home => {
+                // Move cursor to beginning
+                self.state.command_cursor = 0;
+            }
+            KeyCode::End => {
+                // Move cursor to end
+                self.state.command_cursor = self.state.command_line.len();
+            }
+            KeyCode::Up => {
+                // Navigate history up
+                if !self.state.command_history.is_empty() {
+                    let new_index = match self.state.command_history_index {
+                        None => self.state.command_history.len() - 1,
+                        Some(i) if i > 0 => i - 1,
+                        Some(i) => i,
+                    };
+                    self.state.command_history_index = Some(new_index);
+                    self.state.command_line = self.state.command_history[new_index].clone();
+                    self.state.command_cursor = self.state.command_line.len();
+                }
+            }
+            KeyCode::Down => {
+                // Navigate history down
+                if let Some(index) = self.state.command_history_index {
+                    if index < self.state.command_history.len() - 1 {
+                        self.state.command_history_index = Some(index + 1);
+                        self.state.command_line = self.state.command_history[index + 1].clone();
+                    } else {
+                        self.state.command_history_index = None;
+                        self.state.command_line.clear();
+                    }
+                    self.state.command_cursor = self.state.command_line.len();
+                }
+            }
+            KeyCode::Tab => {
+                // Tab completion (basic - just adds selected file name)
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if entry.name != ".." {
+                        let name = if entry.name.contains(' ') {
+                            format!("\"{}\"", entry.name)
+                        } else {
+                            entry.name.clone()
+                        };
+                        self.state.command_line.insert_str(self.state.command_cursor, &name);
+                        self.state.command_cursor += name.len();
+                    }
+                }
+            }
+            _ => {}
+        }
+        
+        Ok(true)
     }
 
     async fn handle_dialog_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
@@ -371,6 +538,11 @@ impl App {
                     cortex_core::ActivePanel::Right => &mut self.state.left_panel,
                 };
                 Self::refresh_panel(inactive)?;
+            }
+            
+            KeyBinding::CommandMode => {
+                self.state.command_mode = true;
+                self.state.command_cursor = self.state.command_line.len();
             }
             
             _ => {}
