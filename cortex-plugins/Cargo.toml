@@ -7,7 +7,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-cortex-core = { path = "../cortex-core" }
 mlua = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }

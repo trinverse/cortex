@@ -5,6 +5,14 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Wrap},
     Frame,
 };
+use crate::viewer_dialog::ViewerDialog;
+use crate::editor_dialog::EditorDialog;
+use crate::filter_dialog::FilterDialog;
+use crate::command_palette_dialog::CommandPaletteDialog;
+use crate::search_dialog::SearchDialog;
+use crate::connection_dialog::ConnectionDialog;
+use crate::plugin_dialog::PluginDialog;
+use crate::config_dialog::ConfigDialog;
 
 #[derive(Debug, Clone)]
 pub enum Dialog {
@@ -13,6 +21,15 @@ pub enum Dialog {
     Progress(ProgressDialog),
     Error(ErrorDialog),
     Help(HelpDialog),
+    Viewer(ViewerDialog),
+    Editor(EditorDialog),
+    Filter(FilterDialog),
+    CommandPalette(CommandPaletteDialog),
+    Search(SearchDialog),
+    Connection(ConnectionDialog),
+    Plugin(PluginDialog),
+    Config(ConfigDialog),
+    SaveConfirm(SaveConfirmDialog),
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +50,44 @@ impl ConfirmDialog {
 
     pub fn toggle_selection(&mut self) {
         self.selected = !self.selected;
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SaveConfirmDialog {
+    pub filename: String,
+    pub selection: SaveChoice,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SaveChoice {
+    Save,
+    DontSave,
+    Cancel,
+}
+
+impl SaveConfirmDialog {
+    pub fn new(filename: impl Into<String>) -> Self {
+        Self {
+            filename: filename.into(),
+            selection: SaveChoice::Save,
+        }
+    }
+
+    pub fn next_choice(&mut self) {
+        self.selection = match self.selection {
+            SaveChoice::Save => SaveChoice::DontSave,
+            SaveChoice::DontSave => SaveChoice::Cancel,
+            SaveChoice::Cancel => SaveChoice::Save,
+        };
+    }
+
+    pub fn prev_choice(&mut self) {
+        self.selection = match self.selection {
+            SaveChoice::Save => SaveChoice::Cancel,
+            SaveChoice::DontSave => SaveChoice::Save,
+            SaveChoice::Cancel => SaveChoice::DontSave,
+        };
     }
 }
 
@@ -214,15 +269,37 @@ impl HelpDialog {
     }
 }
 
-pub fn render_dialog(frame: &mut Frame, dialog: &Dialog) {
-    let area = centered_rect(60, 20, frame.area());
-    
+pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog) {
     match dialog {
-        Dialog::Confirm(d) => render_confirm_dialog(frame, area, d),
-        Dialog::Input(d) => render_input_dialog(frame, area, d),
-        Dialog::Progress(d) => render_progress_dialog(frame, area, d),
-        Dialog::Error(d) => render_error_dialog(frame, area, d),
+        Dialog::Confirm(d) => {
+            let area = centered_rect(60, 20, frame.area());
+            render_confirm_dialog(frame, area, d)
+        },
+        Dialog::Input(d) => {
+            let area = centered_rect(60, 20, frame.area());
+            render_input_dialog(frame, area, d)
+        },
+        Dialog::Progress(d) => {
+            let area = centered_rect(60, 20, frame.area());
+            render_progress_dialog(frame, area, d)
+        },
+        Dialog::Error(d) => {
+            let area = centered_rect(60, 20, frame.area());
+            render_error_dialog(frame, area, d)
+        },
         Dialog::Help(d) => render_help_dialog(frame, d),
+        Dialog::Viewer(d) => d.render(frame),
+        Dialog::Editor(d) => d.render(frame),
+        Dialog::Filter(d) => d.render(frame),
+        Dialog::CommandPalette(d) => d.render(frame),
+        Dialog::Search(d) => d.render(frame),
+        Dialog::Connection(d) => d.render(frame),
+        Dialog::Plugin(d) => d.render(frame),
+        Dialog::Config(d) => d.render(frame),
+        Dialog::SaveConfirm(d) => {
+            let area = centered_rect(60, 20, frame.area());
+            render_save_confirm_dialog(frame, area, d)
+        },
     }
 }
 
@@ -403,6 +480,88 @@ fn render_error_dialog(frame: &mut Frame, area: Rect, dialog: &ErrorDialog) {
         .alignment(Alignment::Center)
         .style(Style::default().bg(Color::Red).fg(Color::White));
     frame.render_widget(ok_button, chunks[chunks.len() - 1]);
+}
+
+fn render_save_confirm_dialog(frame: &mut Frame, area: Rect, dialog: &SaveConfirmDialog) {
+    use crate::dialogs::SaveChoice;
+    
+    frame.render_widget(Clear, area);
+    
+    let block = Block::default()
+        .title(" Save Changes ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+    
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .margin(1)
+        .split(inner);
+    
+    // File name
+    let filename = format!("File: {}", dialog.filename);
+    let filename_widget = Paragraph::new(filename)
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::Cyan));
+    frame.render_widget(filename_widget, chunks[0]);
+    
+    // Message
+    let message = "The file has been modified.\nDo you want to save changes before closing?";
+    let message_widget = Paragraph::new(message)
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true });
+    frame.render_widget(message_widget, chunks[1]);
+    
+    // Buttons
+    let button_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(33),
+            Constraint::Percentage(34),
+            Constraint::Percentage(33),
+        ])
+        .split(chunks[3]);
+    
+    let save_style = if dialog.selection == SaveChoice::Save {
+        Style::default().bg(Color::Green).fg(Color::Black).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Green)
+    };
+    
+    let dont_save_style = if dialog.selection == SaveChoice::DontSave {
+        Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Yellow)
+    };
+    
+    let cancel_style = if dialog.selection == SaveChoice::Cancel {
+        Style::default().bg(Color::Red).fg(Color::White).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Red)
+    };
+    
+    let save_button = Paragraph::new("[S]ave")
+        .alignment(Alignment::Center)
+        .style(save_style);
+    frame.render_widget(save_button, button_chunks[0]);
+    
+    let dont_save_button = Paragraph::new("[D]on't Save")
+        .alignment(Alignment::Center)
+        .style(dont_save_style);
+    frame.render_widget(dont_save_button, button_chunks[1]);
+    
+    let cancel_button = Paragraph::new("[C]ancel")
+        .alignment(Alignment::Center)
+        .style(cancel_style);
+    frame.render_widget(cancel_button, button_chunks[2]);
 }
 
 fn render_help_dialog(frame: &mut Frame, dialog: &HelpDialog) {

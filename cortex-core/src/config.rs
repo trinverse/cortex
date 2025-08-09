@@ -14,11 +14,15 @@ pub struct Config {
     pub colors: ColorConfig,
     #[serde(default)]
     pub keybindings: KeybindingConfig,
+    #[serde(default)]
+    pub plugins: PluginConfig,
+    #[serde(default)]
+    pub network: NetworkConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfig {
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub show_hidden: bool,
     #[serde(default = "default_true")]
     pub confirm_delete: bool,
@@ -28,6 +32,14 @@ pub struct GeneralConfig {
     pub terminal: String,
     #[serde(default = "default_editor")]
     pub editor: String,
+    #[serde(default = "default_true")]
+    pub auto_reload: bool,
+    #[serde(default = "default_true")]
+    pub confirm_operations: bool,
+    #[serde(default = "default_false")]
+    pub enable_sound: bool,
+    #[serde(default = "default_plugin_dir")]
+    pub plugin_directory: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +73,32 @@ pub struct KeybindingConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginConfig {
+    #[serde(default = "default_true")]
+    pub enable_plugins: bool,
+    #[serde(default)]
+    pub disabled_plugins: Vec<String>,
+    #[serde(default = "default_false")]
+    pub auto_reload_plugins: bool,
+    #[serde(default = "default_false")]
+    pub allow_unsafe_plugins: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkConfig {
+    #[serde(default = "default_connection_timeout")]
+    pub connection_timeout: u64, // seconds
+    #[serde(default = "default_false")]
+    pub save_credentials: bool,
+    #[serde(default = "default_false")]
+    pub verify_ssl: bool,
+    #[serde(default)]
+    pub known_hosts: Vec<String>,
+    #[serde(default = "default_false")]
+    pub enable_compression: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomKeybinding {
     pub key: String,
     pub command: String,
@@ -73,6 +111,8 @@ impl Default for Config {
             panels: PanelConfig::default(),
             colors: ColorConfig::default(),
             keybindings: KeybindingConfig::default(),
+            plugins: PluginConfig::default(),
+            network: NetworkConfig::default(),
         }
     }
 }
@@ -85,6 +125,10 @@ impl Default for GeneralConfig {
             show_icons: false,
             terminal: default_terminal(),
             editor: default_editor(),
+            auto_reload: true,
+            confirm_operations: true,
+            enable_sound: false,
+            plugin_directory: default_plugin_dir(),
         }
     }
 }
@@ -119,6 +163,29 @@ impl Default for KeybindingConfig {
     }
 }
 
+impl Default for PluginConfig {
+    fn default() -> Self {
+        Self {
+            enable_plugins: true,
+            disabled_plugins: Vec::new(),
+            auto_reload_plugins: false,
+            allow_unsafe_plugins: false,
+        }
+    }
+}
+
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        Self {
+            connection_timeout: default_connection_timeout(),
+            save_credentials: false,
+            verify_ssl: false,
+            known_hosts: Vec::new(),
+            enable_compression: false,
+        }
+    }
+}
+
 fn default_true() -> bool { true }
 fn default_false() -> bool { false }
 fn default_terminal() -> String { "bash".to_string() }
@@ -128,6 +195,8 @@ fn default_selection_bg() -> String { "blue".to_string() }
 fn default_directory_fg() -> String { "cyan".to_string() }
 fn default_executable_fg() -> String { "green".to_string() }
 fn default_symlink_fg() -> String { "magenta".to_string() }
+fn default_plugin_dir() -> String { "plugins".to_string() }
+fn default_connection_timeout() -> u64 { 30 }
 
 pub struct ConfigManager {
     config: Arc<RwLock<Config>>,

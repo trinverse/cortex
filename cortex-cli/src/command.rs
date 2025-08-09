@@ -88,6 +88,24 @@ impl CommandProcessor {
             "exit" | "quit" => {
                 Ok("exit".to_string())
             }
+            "/monitor" => {
+                if state.is_file_monitoring_active() {
+                    Ok("File monitoring is currently ENABLED".to_string())
+                } else {
+                    Ok("File monitoring is currently DISABLED".to_string())
+                }
+            }
+            "/watch" => {
+                let watched = state.left_panel.current_dir.to_string_lossy().to_string() 
+                    + ", " + &state.right_panel.current_dir.to_string_lossy().to_string();
+                Ok(format!("Watched directories: {}", watched))
+            }
+            "/notifications" => {
+                Ok("Notifications toggle command - handled by UI".to_string())
+            }
+            "/config" => {
+                Ok("Opening configuration - handled by UI".to_string())
+            }
             _ => {
                 // Execute external command
                 Self::execute_external_command(&expanded).await

@@ -1,9 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
-use cortex_core::{AppState, FileSystem, FileOperation};
-use cortex_tui::{Dialog, InputDialog, ProgressDialog, ErrorDialog, HelpDialog, Event, EventHandler, KeyBinding, UI};
+use cortex_core::{AppState, FileSystem, FileOperation, FileType, VfsPath, VirtualFileSystem, RemoteCredentials, SftpProvider, FtpProvider, VfsProvider, is_supported_archive, LuaPlugin, PluginEvent};
+use cortex_plugins::Plugin;
+use cortex_tui::{Dialog, InputDialog, ProgressDialog, ErrorDialog, HelpDialog, SaveConfirmDialog, SaveChoice, Event, EventHandler, UI, FileViewer, ViewerDialog, TextEditor, EditorDialog, FilterDialog, CommandPaletteDialog, SearchDialog, SearchState, ConnectionDialog, ConnectionType, PluginDialog, ConfigDialog, NotificationManager, NotificationType};
 use crossterm::{
-    event::KeyCode,
+    event::{KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -38,7 +39,7 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let mut app = App::new(args.path)?;
+    let mut app = App::new(args.path).await?;
     app.run().await
 }
 
@@ -47,12 +48,18 @@ struct App {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     events: EventHandler,
     dialog: Option<Dialog>,
+    pending_editor: Option<EditorDialog>,
     operation_manager: OperationManager,
     operation_rx: Option<mpsc::UnboundedReceiver<cortex_core::OperationProgress>>,
+    search_rx: Option<mpsc::UnboundedReceiver<cortex_core::SearchProgress>>,
+    refresh_needed: bool,
+    file_change_rx: Option<mpsc::UnboundedReceiver<()>>,
+    file_event_rx: Option<mpsc::UnboundedReceiver<cortex_core::FileMonitorEvent>>,
+    notification_manager: NotificationManager,
 }
 
 impl App {
-    fn new(initial_path: Option<PathBuf>) -> Result<Self> {
+    async fn new(initial_path: Option<PathBuf>) -> Result<Self> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen)?;
@@ -72,6 +79,25 @@ impl App {
         Self::refresh_panel(&mut state.left_panel)?;
         Self::refresh_panel(&mut state.right_panel)?;
         
+        // Apply initial configuration
+        Self::apply_configuration(&mut state);
+        
+        // Load plugins
+        if let Err(e) = Self::load_plugins(&mut state).await {
+            eprintln!("Warning: Failed to load plugins: {}", e);
+        }
+        
+        // Create file change notification channels
+        let (file_change_tx, file_change_rx) = mpsc::unbounded_channel();
+        let (file_event_tx, file_event_rx) = mpsc::unbounded_channel();
+        
+        // Initialize file monitor with callback
+        let file_change_tx_clone = file_change_tx.clone();
+        let file_event_tx_clone = file_event_tx.clone();
+        if let Err(e) = Self::init_file_monitor_with_callback(&mut state, file_change_tx_clone, file_event_tx_clone).await {
+            eprintln!("Warning: Failed to initialize file monitor: {}", e);
+        }
+        
         let events = EventHandler::new(Duration::from_millis(100));
         
         Ok(Self {
@@ -79,8 +105,14 @@ impl App {
             terminal,
             events,
             dialog: None,
+            pending_editor: None,
             operation_manager: OperationManager::new(),
             operation_rx: None,
+            search_rx: None,
+            refresh_needed: false,
+            file_change_rx: Some(file_change_rx),
+            file_event_rx: Some(file_event_rx),
+            notification_manager: NotificationManager::new(),
         })
     }
 
@@ -88,9 +120,11 @@ impl App {
         loop {
             self.terminal.draw(|frame| {
                 UI::draw(frame, &self.state);
-                if let Some(dialog) = &self.dialog {
+                if let Some(ref mut dialog) = self.dialog {
                     cortex_tui::dialogs::render_dialog(frame, dialog);
                 }
+                // Render notifications on top
+                self.notification_manager.render(frame);
             })?;
             
             if let Some(rx) = &mut self.operation_rx {
@@ -99,18 +133,49 @@ impl App {
                 }
             }
             
+            // Check for search progress
+            let search_progresses: Vec<_> = if let Some(rx) = &mut self.search_rx {
+                let mut progresses = Vec::new();
+                while let Ok(progress) = rx.try_recv() {
+                    progresses.push(progress);
+                }
+                progresses
+            } else {
+                Vec::new()
+            };
+            
+            for progress in search_progresses {
+                self.handle_search_progress(progress);
+            }
+            
+            // Check for file system changes
+            if let Some(rx) = &mut self.file_change_rx {
+                if rx.try_recv().is_ok() {
+                    self.refresh_needed = true;
+                }
+            }
+            
+            // Check for file events for notifications
+            let mut events_to_process = Vec::new();
+            if let Some(rx) = &mut self.file_event_rx {
+                while let Ok(event) = rx.try_recv() {
+                    events_to_process.push(event);
+                }
+            }
+            
+            for event in events_to_process {
+                self.handle_file_event(event);
+            }
+            
             match self.events.next().await? {
                 Event::Key(key_event) => {
                     if self.dialog.is_some() {
                         if !self.handle_dialog_input(key_event).await? {
                             break;
                         }
-                    } else if self.state.command_mode {
-                        if !self.handle_command_mode_input(key_event).await? {
-                            break;
-                        }
-                    } else if let Some(binding) = KeyBinding::from_key_event(key_event) {
-                        if !self.handle_input(binding).await? {
+                    } else {
+                        // Handle all input - typing goes to command line by default
+                        if !self.handle_input(key_event).await? {
                             break;
                         }
                     }
@@ -118,29 +183,163 @@ impl App {
                 Event::Resize(_, _) => {
                     self.terminal.autoresize()?;
                 }
-                Event::Tick => {}
+                Event::Tick => {
+                    // Check if panels need refreshing due to file system changes
+                    if self.refresh_needed && self.state.is_file_monitoring_active() {
+                        if let Err(e) = Self::refresh_panel(&mut self.state.left_panel) {
+                            log::warn!("Failed to refresh left panel: {}", e);
+                        }
+                        if let Err(e) = Self::refresh_panel(&mut self.state.right_panel) {
+                            log::warn!("Failed to refresh right panel: {}", e);
+                        }
+                        self.refresh_needed = false;
+                    }
+                }
             }
         }
         
+        // Ensure cleanup happens when we break from the loop
+        self.cleanup_and_exit().await?;
         Ok(())
     }
 
-    async fn handle_command_mode_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        use crossterm::event::KeyModifiers;
-        
-        match key.code {
-            KeyCode::Esc => {
-                // Exit command mode
-                self.state.command_mode = false;
-                self.state.command_line.clear();
-                self.state.command_cursor = 0;
-                self.state.command_history_index = None;
+    async fn handle_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        // First check for special keys that work globally
+        match (key.code, key.modifiers) {
+            // Navigation keys - work on panels
+            (KeyCode::Up, modifiers) if modifiers.is_empty() && self.state.command_line.is_empty() => {
+                let panel = self.state.active_panel_mut();
+                panel.move_selection_up();
+                panel.update_view_offset(self.terminal.size()?.height as usize - 5);
             }
-            KeyCode::Enter => {
+            (KeyCode::Down, modifiers) if modifiers.is_empty() && self.state.command_line.is_empty() => {
+                let panel = self.state.active_panel_mut();
+                panel.move_selection_down();
+                panel.update_view_offset(self.terminal.size()?.height as usize - 5);
+            }
+            (KeyCode::Left, modifiers) if modifiers.is_empty() && self.state.command_line.is_empty() => {
+                let current_dir = self.state.active_panel().current_dir.clone();
+                if let Some(parent) = current_dir.parent() {
+                    self.navigate_to_directory(parent.to_path_buf()).await?;
+                }
+            }
+            (KeyCode::Right, modifiers) if modifiers.is_empty() && self.state.command_line.is_empty() => {
+                let current_entry = self.state.active_panel().current_entry().cloned();
+                let current_dir = self.state.active_panel().current_dir.clone();
+                
+                if let Some(entry) = current_entry {
+                    if entry.file_type == FileType::Directory {
+                        let new_dir = if entry.name == ".." {
+                            current_dir.parent().map(|p| p.to_path_buf())
+                        } else {
+                            Some(entry.path.clone())
+                        };
+                        
+                        if let Some(dir) = new_dir {
+                            self.navigate_to_directory(dir).await?;
+                        }
+                    }
+                }
+            }
+            
+            // Command line navigation when typing
+            (KeyCode::Left, modifiers) if modifiers.is_empty() && !self.state.command_line.is_empty() => {
+                if self.state.command_cursor > 0 {
+                    self.state.command_cursor -= 1;
+                }
+            }
+            (KeyCode::Right, modifiers) if modifiers.is_empty() && !self.state.command_line.is_empty() => {
+                if self.state.command_cursor < self.state.command_line.len() {
+                    self.state.command_cursor += 1;
+                }
+            }
+            
+            // History navigation with Up/Down when command line has text
+            (KeyCode::Up, modifiers) if modifiers.is_empty() && !self.state.command_line.is_empty() => {
+                if !self.state.command_history.is_empty() {
+                    let new_index = match self.state.command_history_index {
+                        None => self.state.command_history.len() - 1,
+                        Some(i) if i > 0 => i - 1,
+                        Some(i) => i,
+                    };
+                    self.state.command_history_index = Some(new_index);
+                    self.state.command_line = self.state.command_history[new_index].clone();
+                    self.state.command_cursor = self.state.command_line.len();
+                }
+            }
+            (KeyCode::Down, modifiers) if modifiers.is_empty() && !self.state.command_line.is_empty() => {
+                if let Some(index) = self.state.command_history_index {
+                    if index < self.state.command_history.len() - 1 {
+                        self.state.command_history_index = Some(index + 1);
+                        self.state.command_line = self.state.command_history[index + 1].clone();
+                    } else {
+                        self.state.command_history_index = None;
+                        self.state.command_line.clear();
+                    }
+                    self.state.command_cursor = self.state.command_line.len();
+                }
+            }
+            
+            // Global keys that always work
+            (KeyCode::Tab, _) => {
+                self.state.toggle_panel();
+            }
+            (KeyCode::Enter, modifiers) if modifiers.is_empty() && self.state.command_line.is_empty() => {
+                // Enter on empty command line navigates directories and archives
+                if self.state.active_panel().is_using_vfs() {
+                    // In VFS mode
+                    let panel = self.state.active_panel();
+                    if let Some(entry) = panel.current_vfs_entry().cloned() {
+                        if entry.name == ".." {
+                            // Navigate back from VFS
+                            self.state.navigate_back_from_vfs()?;
+                            let panel = self.state.active_panel_mut();
+                            Self::refresh_panel(panel)?;
+                        } else {
+                            // Navigate deeper into VFS
+                            let vfs = VirtualFileSystem::new();
+                            if let Some(new_path) = vfs.navigate_into(&entry) {
+                                self.state.navigate_into_vfs(new_path)?;
+                            }
+                        }
+                    }
+                } else {
+                    // In regular filesystem mode
+                    let panel = self.state.active_panel();
+                    if let Some(entry) = panel.current_entry().cloned() {
+                        if entry.file_type == FileType::Directory {
+                            let new_dir = if entry.name == ".." {
+                                panel.current_dir.parent().map(|p| p.to_path_buf())
+                            } else {
+                                Some(entry.path.clone())
+                            };
+                            
+                            if let Some(dir) = new_dir {
+                                let panel = self.state.active_panel_mut();
+                                panel.current_dir = dir;
+                                panel.selected_index = 0;
+                                panel.view_offset = 0;
+                                Self::refresh_panel(panel)?;
+                            }
+                        } else if is_supported_archive(&entry.path) {
+                            // Navigate into archive
+                            let vfs_path = VfsPath::Archive {
+                                archive_path: entry.path.clone(),
+                                internal_path: String::new(),
+                            };
+                            self.state.navigate_into_vfs(vfs_path)?;
+                        }
+                    }
+                }
+            }
+            (KeyCode::Enter, _) if !self.state.command_line.is_empty() => {
                 // Execute command
-                if !self.state.command_line.is_empty() {
-                    let command = self.state.command_line.clone();
-                    
+                let command = self.state.command_line.clone();
+                
+                // Check for special / commands
+                if command.starts_with("/") {
+                    self.handle_special_command(&command[1..]).await?;
+                } else {
                     // Add to history
                     self.state.command_history.push(command.clone());
                     
@@ -159,8 +358,6 @@ impl App {
                         } else {
                             self.state.set_status_message(format!("cd: cannot access '{}': No such directory", path));
                         }
-                    } else if command == "exit" || command == "quit" {
-                        return Ok(false);
                     } else {
                         // Execute external command
                         match CommandProcessor::execute_command(&command, &self.state).await {
@@ -174,116 +371,418 @@ impl App {
                             }
                         }
                     }
-                    
-                    self.state.command_line.clear();
-                    self.state.command_cursor = 0;
-                    self.state.command_mode = false;
-                    self.state.command_history_index = None;
                 }
-            }
-            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Clear line
+                
                 self.state.command_line.clear();
                 self.state.command_cursor = 0;
+                self.state.command_history_index = None;
             }
-            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Delete word before cursor
-                if self.state.command_cursor > 0 {
-                    let mut pos = self.state.command_cursor - 1;
-                    // Skip trailing spaces
-                    while pos > 0 && self.state.command_line.chars().nth(pos) == Some(' ') {
-                        pos -= 1;
+            
+            // Function keys
+            (KeyCode::F(1), _) => {
+                self.dialog = Some(Dialog::Help(HelpDialog::new()));
+            }
+            (KeyCode::F(3), _) => {
+                // View file
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if entry.file_type == FileType::File {
+                        match FileViewer::new(&entry.path) {
+                            Ok(mut viewer) => {
+                                let height = self.terminal.size().unwrap_or_default().height as usize;
+                                let _ = viewer.load_content(height - 8); // Leave space for UI chrome
+                                self.dialog = Some(Dialog::Viewer(ViewerDialog::new(viewer)));
+                            }
+                            Err(e) => {
+                                self.dialog = Some(Dialog::Error(
+                                    ErrorDialog::new(format!("Cannot view file: {}", e))
+                                ));
+                            }
+                        }
                     }
-                    // Find word boundary
-                    while pos > 0 && self.state.command_line.chars().nth(pos - 1) != Some(' ') {
-                        pos -= 1;
-                    }
-                    self.state.command_line.drain(pos..self.state.command_cursor);
-                    self.state.command_cursor = pos;
                 }
             }
-            KeyCode::Char(c) => {
-                // Insert character
+            (KeyCode::F(4), _) => {
+                // Edit file
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if entry.file_type == FileType::File {
+                        match TextEditor::new(&entry.path) {
+                            Ok(editor) => {
+                                self.dialog = Some(Dialog::Editor(EditorDialog::new(editor)));
+                            }
+                            Err(e) => {
+                                self.dialog = Some(Dialog::Error(
+                                    ErrorDialog::new(format!("Cannot edit file: {}", e))
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            (KeyCode::F(5), _) => {
+                if let Some(operation) = OperationManager::prepare_copy(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            (KeyCode::F(6), _) => {
+                if let Some(operation) = OperationManager::prepare_move(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            (KeyCode::F(7), _) => {
+                self.dialog = Some(Dialog::Input(
+                    InputDialog::new("Create Directory", "Enter directory name:")
+                ));
+                self.state.pending_operation = Some(FileOperation::CreateDir {
+                    path: PathBuf::new(),
+                });
+            }
+            (KeyCode::F(8), _) => {
+                if let Some(operation) = OperationManager::prepare_delete(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            
+            // Control keys
+            (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
+                // Properly cleanup and exit
+                self.cleanup_and_exit().await?;
+                return Ok(false);
+            }
+            (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+                if self.state.command_line.is_empty() {
+                    if let Some(entry) = self.state.active_panel().current_entry() {
+                        if entry.name != ".." {
+                            self.dialog = Some(Dialog::Input(
+                                InputDialog::new("Rename", "Enter new name:")
+                                    .with_value(&entry.name)
+                            ));
+                            self.state.pending_operation = Some(FileOperation::Rename {
+                                old_path: entry.path.clone(),
+                                new_name: entry.name.clone(),
+                            });
+                        }
+                    }
+                } else {
+                    // Refresh panels
+                    Self::refresh_panel(self.state.active_panel_mut())?;
+                    let inactive = match self.state.active_panel {
+                        cortex_core::ActivePanel::Left => &mut self.state.right_panel,
+                        cortex_core::ActivePanel::Right => &mut self.state.left_panel,
+                    };
+                    Self::refresh_panel(inactive)?;
+                }
+            }
+            (KeyCode::Char('h'), KeyModifiers::CONTROL) => {
+                let panel = self.state.active_panel_mut();
+                panel.show_hidden = !panel.show_hidden;
+                Self::refresh_panel(panel)?;
+            }
+            (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
+                let panel = self.state.active_panel_mut();
+                for entry in &panel.entries {
+                    if entry.name != ".." {
+                        panel.marked_files.push(entry.path.clone());
+                    }
+                }
+            }
+            (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                if !self.state.command_line.is_empty() {
+                    // Clear command line
+                    self.state.command_line.clear();
+                    self.state.command_cursor = 0;
+                } else {
+                    // Unmark all
+                    let panel = self.state.active_panel_mut();
+                    panel.clear_marks();
+                }
+            }
+            (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+                // Quick filter
+                let current_filter = self.state.active_panel().filter.clone();
+                self.dialog = Some(Dialog::Filter(
+                    FilterDialog::with_current_filter(current_filter.as_ref())
+                ));
+            }
+            (KeyCode::Char('7'), KeyModifiers::ALT) => {
+                // Advanced search (Alt+F7)
+                self.dialog = Some(Dialog::Search(SearchDialog::new()));
+            }
+            
+            // Special keys
+            (KeyCode::PageUp, _) => {
+                let height = self.terminal.size()?.height as usize - 5;
+                let panel = self.state.active_panel_mut();
+                panel.move_selection_page_up(height);
+                panel.update_view_offset(height);
+            }
+            (KeyCode::PageDown, _) => {
+                let height = self.terminal.size()?.height as usize - 5;
+                let panel = self.state.active_panel_mut();
+                panel.move_selection_page_down(height);
+                panel.update_view_offset(height);
+            }
+            (KeyCode::Home, _) => {
+                if !self.state.command_line.is_empty() {
+                    self.state.command_cursor = 0;
+                } else {
+                    let panel = self.state.active_panel_mut();
+                    panel.move_selection_home();
+                    panel.update_view_offset(self.terminal.size()?.height as usize - 5);
+                }
+            }
+            (KeyCode::End, _) => {
+                if !self.state.command_line.is_empty() {
+                    self.state.command_cursor = self.state.command_line.len();
+                } else {
+                    let panel = self.state.active_panel_mut();
+                    panel.move_selection_end();
+                    panel.update_view_offset(self.terminal.size()?.height as usize - 5);
+                }
+            }
+            (KeyCode::Esc, _) => {
+                // Clear command line
+                self.state.command_line.clear();
+                self.state.command_cursor = 0;
+                self.state.command_history_index = None;
+            }
+            (KeyCode::Backspace, _) => {
+                if self.state.command_cursor > 0 {
+                    self.state.command_cursor -= 1;
+                    self.state.command_line.remove(self.state.command_cursor);
+                }
+            }
+            (KeyCode::Delete, _) => {
+                if self.state.command_cursor < self.state.command_line.len() {
+                    self.state.command_line.remove(self.state.command_cursor);
+                }
+            }
+            (KeyCode::Char(' '), modifiers) if modifiers.is_empty() && self.state.command_line.is_empty() => {
+                // Space marks file when command line is empty
+                let panel = self.state.active_panel_mut();
+                panel.toggle_mark_current();
+                panel.move_selection_down();
+                panel.update_view_offset(self.terminal.size()?.height as usize - 5);
+            }
+            
+            // Regular character input - goes to command line
+            (KeyCode::Char('/'), _) if self.state.command_line.is_empty() => {
+                // Show command palette when / is typed on empty command line
+                self.dialog = Some(Dialog::CommandPalette(CommandPaletteDialog::new()));
+            }
+            (KeyCode::Char(c), _) => {
                 self.state.command_line.insert(self.state.command_cursor, c);
                 self.state.command_cursor += 1;
             }
-            KeyCode::Backspace => {
-                // Delete character before cursor
-                if self.state.command_cursor > 0 {
-                    self.state.command_cursor -= 1;
-                    self.state.command_line.remove(self.state.command_cursor);
-                }
-            }
-            KeyCode::Delete => {
-                // Delete character at cursor
-                if self.state.command_cursor < self.state.command_line.len() {
-                    self.state.command_line.remove(self.state.command_cursor);
-                }
-            }
-            KeyCode::Left => {
-                // Move cursor left
-                if self.state.command_cursor > 0 {
-                    self.state.command_cursor -= 1;
-                }
-            }
-            KeyCode::Right => {
-                // Move cursor right
-                if self.state.command_cursor < self.state.command_line.len() {
-                    self.state.command_cursor += 1;
-                }
-            }
-            KeyCode::Home => {
-                // Move cursor to beginning
-                self.state.command_cursor = 0;
-            }
-            KeyCode::End => {
-                // Move cursor to end
-                self.state.command_cursor = self.state.command_line.len();
-            }
-            KeyCode::Up => {
-                // Navigate history up
-                if !self.state.command_history.is_empty() {
-                    let new_index = match self.state.command_history_index {
-                        None => self.state.command_history.len() - 1,
-                        Some(i) if i > 0 => i - 1,
-                        Some(i) => i,
-                    };
-                    self.state.command_history_index = Some(new_index);
-                    self.state.command_line = self.state.command_history[new_index].clone();
-                    self.state.command_cursor = self.state.command_line.len();
-                }
-            }
-            KeyCode::Down => {
-                // Navigate history down
-                if let Some(index) = self.state.command_history_index {
-                    if index < self.state.command_history.len() - 1 {
-                        self.state.command_history_index = Some(index + 1);
-                        self.state.command_line = self.state.command_history[index + 1].clone();
-                    } else {
-                        self.state.command_history_index = None;
-                        self.state.command_line.clear();
-                    }
-                    self.state.command_cursor = self.state.command_line.len();
-                }
-            }
-            KeyCode::Tab => {
-                // Tab completion (basic - just adds selected file name)
-                if let Some(entry) = self.state.active_panel().current_entry() {
-                    if entry.name != ".." {
-                        let name = if entry.name.contains(' ') {
-                            format!("\"{}\"", entry.name)
-                        } else {
-                            entry.name.clone()
-                        };
-                        self.state.command_line.insert_str(self.state.command_cursor, &name);
-                        self.state.command_cursor += name.len();
-                    }
-                }
-            }
+            
             _ => {}
         }
         
         Ok(true)
+    }
+
+    async fn handle_special_command(&mut self, command: &str) -> Result<()> {
+        // Debug log to track which command is being executed
+        log::debug!("Executing special command: {}", command);
+        
+        match command {
+            "exit" | "quit" | "q" => {
+                // Properly cleanup and exit
+                self.cleanup_and_exit().await?;
+                std::process::exit(0);
+            }
+            "help" | "?" => {
+                self.dialog = Some(Dialog::Help(HelpDialog::new()));
+            }
+            "reload" | "refresh" => {
+                Self::refresh_panel(self.state.active_panel_mut())?;
+                let inactive = match self.state.active_panel {
+                    cortex_core::ActivePanel::Left => &mut self.state.right_panel,
+                    cortex_core::ActivePanel::Right => &mut self.state.left_panel,
+                };
+                Self::refresh_panel(inactive)?;
+                self.state.set_status_message("Panels reloaded");
+            }
+            "filter" => {
+                let current_filter = self.state.active_panel().filter.clone();
+                self.dialog = Some(Dialog::Filter(
+                    FilterDialog::with_current_filter(current_filter.as_ref())
+                ));
+            }
+            "find" => {
+                self.dialog = Some(Dialog::Search(SearchDialog::new()));
+            }
+            "sftp" => {
+                self.dialog = Some(Dialog::Connection(ConnectionDialog::new().with_type(ConnectionType::Sftp)));
+            }
+            "ftp" => {
+                self.dialog = Some(Dialog::Connection(ConnectionDialog::new().with_type(ConnectionType::Ftp)));
+            }
+            "plugin" | "plugins" => {
+                let plugin_info = self.state.plugin_manager.get_plugin_info();
+                let plugin_states: Vec<bool> = plugin_info.iter()
+                    .map(|p| self.state.plugin_manager.is_plugin_enabled(&p.name))
+                    .collect();
+                self.dialog = Some(Dialog::Plugin(PluginDialog::with_states(plugin_info, plugin_states)));
+            }
+            "config" | "settings" | "preferences" => {
+                let config = self.state.config_manager.get();
+                self.dialog = Some(Dialog::Config(ConfigDialog::new(config)));
+            }
+            "monitor" => {
+                if let Err(e) = self.state.toggle_auto_reload().await {
+                    self.state.set_status_message(format!("Error toggling file monitoring: {}", e));
+                } else {
+                    let status = if self.state.is_file_monitoring_active() {
+                        "File monitoring ENABLED"
+                    } else {
+                        "File monitoring DISABLED"
+                    };
+                    self.state.set_status_message(status);
+                }
+            }
+            "watch" => {
+                let watched = self.state.get_watched_directories().await;
+                if watched.is_empty() {
+                    self.state.set_status_message("No directories being watched");
+                } else {
+                    let dirs = watched.iter()
+                        .map(|p| p.to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    self.state.set_status_message(format!("Watching: {}", dirs));
+                }
+            }
+            "notifications" => {
+                self.notification_manager.toggle_visibility();
+                let status = if self.notification_manager.is_visible() {
+                    "Notifications ENABLED"
+                } else {
+                    "Notifications DISABLED" 
+                };
+                self.state.set_status_message(status);
+            }
+            "view" => {
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if entry.file_type == FileType::File {
+                        match FileViewer::new(&entry.path) {
+                            Ok(mut viewer) => {
+                                let height = self.terminal.size().unwrap_or_default().height as usize;
+                                let _ = viewer.load_content(height - 8);
+                                self.dialog = Some(Dialog::Viewer(ViewerDialog::new(viewer)));
+                            }
+                            Err(e) => {
+                                self.state.set_status_message(format!("Cannot view: {}", e));
+                            }
+                        }
+                    }
+                }
+            }
+            "edit" => {
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if entry.file_type == FileType::File {
+                        match TextEditor::new(&entry.path) {
+                            Ok(editor) => {
+                                self.dialog = Some(Dialog::Editor(EditorDialog::new(editor)));
+                            }
+                            Err(e) => {
+                                self.state.set_status_message(format!("Cannot edit: {}", e));
+                            }
+                        }
+                    }
+                }
+            }
+            "copy" => {
+                if let Some(operation) = OperationManager::prepare_copy(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            "move" => {
+                if let Some(operation) = OperationManager::prepare_move(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            "delete" => {
+                if let Some(operation) = OperationManager::prepare_delete(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            "mkdir" => {
+                self.dialog = Some(Dialog::Input(
+                    InputDialog::new("Create Directory", "Enter directory name:")
+                ));
+                self.state.pending_operation = Some(FileOperation::CreateDir {
+                    path: PathBuf::new(),
+                });
+            }
+            "rename" => {
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if entry.name != ".." {
+                        self.dialog = Some(Dialog::Input(
+                            InputDialog::new("Rename", "Enter new name:")
+                                .with_value(&entry.name)
+                        ));
+                        self.state.pending_operation = Some(FileOperation::Rename {
+                            old_path: entry.path.clone(),
+                            new_name: entry.name.clone(),
+                        });
+                    }
+                }
+            }
+            "hidden" => {
+                let panel = self.state.active_panel_mut();
+                panel.show_hidden = !panel.show_hidden;
+                let show_hidden = panel.show_hidden;
+                Self::refresh_panel(panel)?;
+                self.state.set_status_message(format!("Hidden files: {}", 
+                    if show_hidden { "shown" } else { "hidden" }));
+            }
+            "home" => {
+                if let Some(home) = dirs::home_dir() {
+                    let panel = self.state.active_panel_mut();
+                    panel.current_dir = home;
+                    panel.selected_index = 0;
+                    panel.view_offset = 0;
+                    Self::refresh_panel(panel)?;
+                }
+            }
+            "root" => {
+                let panel = self.state.active_panel_mut();
+                panel.current_dir = PathBuf::from("/");
+                panel.selected_index = 0;
+                panel.view_offset = 0;
+                Self::refresh_panel(panel)?;
+            }
+            cmd if cmd.starts_with("cd ") => {
+                let path = &cmd[3..].trim();
+                if let Some(new_dir) = CommandProcessor::parse_cd_path(
+                    path, 
+                    &self.state.active_panel().current_dir
+                ) {
+                    let panel = self.state.active_panel_mut();
+                    panel.current_dir = new_dir;
+                    panel.selected_index = 0;
+                    panel.view_offset = 0;
+                    Self::refresh_panel(panel)?;
+                } else {
+                    self.state.set_status_message(format!("cd: cannot access '{}': No such directory", path));
+                }
+            }
+            _ => {
+                // Try plugin commands first
+                if self.handle_plugin_command(command).await? {
+                    return Ok(()); // Plugin handled the command
+                }
+                
+                self.state.set_status_message(format!("Unknown command: /{}", command));
+            }
+        }
+        Ok(())
     }
 
     async fn handle_dialog_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
@@ -371,184 +870,678 @@ impl App {
                     _ => {}
                 }
             }
+            Some(Dialog::Editor(dialog)) => {
+                if dialog.search_mode {
+                    // Handle search input
+                    match key.code {
+                        KeyCode::Char(c) => {
+                            dialog.search_input.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            dialog.search_input.pop();
+                        }
+                        KeyCode::Enter => {
+                            if !dialog.search_input.is_empty() {
+                                dialog.editor.search(&dialog.search_input);
+                                dialog.search_mode = false;
+                            }
+                        }
+                        KeyCode::Esc => {
+                            dialog.search_mode = false;
+                            dialog.search_input.clear();
+                        }
+                        _ => {}
+                    }
+                } else if dialog.replace_mode {
+                    // Handle replace input
+                    match key.code {
+                        KeyCode::Char(c) => {
+                            dialog.replace_input.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            dialog.replace_input.pop();
+                        }
+                        KeyCode::Enter => {
+                            if !dialog.replace_input.is_empty() && dialog.editor.search_term.is_some() {
+                                let search = dialog.editor.search_term.clone().unwrap();
+                                dialog.editor.replace(&search, &dialog.replace_input, false);
+                                dialog.replace_mode = false;
+                            }
+                        }
+                        KeyCode::Esc => {
+                            dialog.replace_mode = false;
+                            dialog.replace_input.clear();
+                        }
+                        _ => {}
+                    }
+                } else {
+                    // Normal editor controls
+                    match (key.code, key.modifiers) {
+                        (KeyCode::Esc, _) | (KeyCode::F(4), _) => {
+                            if dialog.editor.modified {
+                                // Show save confirmation dialog
+                                let filename = dialog.editor.path.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("Untitled")
+                                    .to_string();
+                                // Store the editor dialog temporarily
+                                self.pending_editor = Some(dialog.clone());
+                                self.dialog = Some(Dialog::SaveConfirm(SaveConfirmDialog::new(filename)));
+                            } else {
+                                self.dialog = None;
+                            }
+                        }
+                        (KeyCode::Char('s'), KeyModifiers::CONTROL) => {
+                            let _ = dialog.editor.save();
+                        }
+                        (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+                            dialog.search_mode = true;
+                            dialog.search_input.clear();
+                        }
+                        (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+                            if dialog.editor.search_term.is_some() {
+                                dialog.replace_mode = true;
+                                dialog.replace_input.clear();
+                            }
+                        }
+                        (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
+                            dialog.editor.undo();
+                        }
+                        (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
+                            dialog.editor.redo();
+                        }
+                        (KeyCode::Up, _) => {
+                            dialog.editor.move_cursor_up();
+                        }
+                        (KeyCode::Down, _) => {
+                            dialog.editor.move_cursor_down();
+                        }
+                        (KeyCode::Left, _) => {
+                            dialog.editor.move_cursor_left();
+                        }
+                        (KeyCode::Right, _) => {
+                            dialog.editor.move_cursor_right();
+                        }
+                        (KeyCode::Home, _) => {
+                            dialog.editor.move_cursor_home();
+                        }
+                        (KeyCode::End, _) => {
+                            dialog.editor.move_cursor_end();
+                        }
+                        (KeyCode::PageUp, _) => {
+                            let height = self.terminal.size().unwrap_or_default().height as usize;
+                            dialog.editor.move_cursor_page_up(height - 8);
+                        }
+                        (KeyCode::PageDown, _) => {
+                            let height = self.terminal.size().unwrap_or_default().height as usize;
+                            dialog.editor.move_cursor_page_down(height - 8);
+                        }
+                        (KeyCode::Enter, _) => {
+                            dialog.editor.insert_newline();
+                        }
+                        (KeyCode::Backspace, _) => {
+                            dialog.editor.delete_char();
+                        }
+                        (KeyCode::Delete, _) => {
+                            dialog.editor.delete_forward();
+                        }
+                        (KeyCode::Char(c), _) => {
+                            dialog.editor.insert_char(c);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Some(Dialog::Viewer(dialog)) => {
+                if dialog.search_mode {
+                    // Handle search input
+                    match key.code {
+                        KeyCode::Char(c) => {
+                            dialog.search_input.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            dialog.search_input.pop();
+                        }
+                        KeyCode::Enter => {
+                            if !dialog.search_input.is_empty() {
+                                dialog.viewer.search(&dialog.search_input);
+                                dialog.search_mode = false;
+                            }
+                        }
+                        KeyCode::Esc => {
+                            dialog.search_mode = false;
+                            dialog.search_input.clear();
+                        }
+                        _ => {}
+                    }
+                } else {
+                    // Normal viewer controls
+                    match key.code {
+                        KeyCode::Up => {
+                            dialog.viewer.scroll_up(1);
+                            let height = self.terminal.size().unwrap_or_default().height as usize;
+                            let _ = dialog.viewer.load_content(height - 8);
+                        }
+                        KeyCode::Down => {
+                            dialog.viewer.scroll_down(1);
+                            let height = self.terminal.size().unwrap_or_default().height as usize;
+                            let _ = dialog.viewer.load_content(height - 8);
+                        }
+                        KeyCode::PageUp => {
+                            let height = self.terminal.size().unwrap_or_default().height as usize;
+                            dialog.viewer.page_up(height - 8);
+                            let _ = dialog.viewer.load_content(height - 8);
+                        }
+                        KeyCode::PageDown => {
+                            let height = self.terminal.size().unwrap_or_default().height as usize;
+                            dialog.viewer.page_down(height - 8);
+                            let _ = dialog.viewer.load_content(height - 8);
+                        }
+                        KeyCode::Char('h') | KeyCode::Char('H') => {
+                            dialog.viewer.toggle_hex_mode();
+                            let height = self.terminal.size().unwrap_or_default().height as usize;
+                            let _ = dialog.viewer.load_content(height - 8);
+                        }
+                        KeyCode::Char('w') | KeyCode::Char('W') => {
+                            dialog.viewer.toggle_wrap();
+                            let height = self.terminal.size().unwrap_or_default().height as usize;
+                            let _ = dialog.viewer.load_content(height - 8);
+                        }
+                        KeyCode::Char('/') => {
+                            dialog.search_mode = true;
+                            dialog.search_input.clear();
+                        }
+                        KeyCode::Char('f') | KeyCode::Char('F') | KeyCode::Char('n') => {
+                            dialog.viewer.search_next();
+                        }
+                        KeyCode::Esc | KeyCode::F(3) | KeyCode::Char('q') => {
+                            self.dialog = None;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Some(Dialog::Filter(dialog)) => {
+                match (key.code, key.modifiers) {
+                    (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                        dialog.clear();
+                        let panel = self.state.active_panel_mut();
+                        panel.clear_filter();
+                    }
+                    (KeyCode::Char(c), _) => {
+                        dialog.insert_char(c);
+                        // Real-time filtering
+                        let panel = self.state.active_panel_mut();
+                        panel.apply_filter(&dialog.input);
+                    }
+                    (KeyCode::Backspace, _) => {
+                        dialog.delete_char();
+                        // Real-time filtering
+                        let panel = self.state.active_panel_mut();
+                        panel.apply_filter(&dialog.input);
+                    }
+                    (KeyCode::Left, _) => {
+                        dialog.move_cursor_left();
+                    }
+                    (KeyCode::Right, _) => {
+                        dialog.move_cursor_right();
+                    }
+                    (KeyCode::Enter, _) => {
+                        // Apply filter and close dialog
+                        self.dialog = None;
+                    }
+                    (KeyCode::Esc, _) => {
+                        // Cancel filter
+                        let panel = self.state.active_panel_mut();
+                        panel.clear_filter();
+                        self.dialog = None;
+                    }
+                    _ => {}
+                }
+            }
+            Some(Dialog::CommandPalette(dialog)) => {
+                match key.code {
+                    KeyCode::Char(c) => {
+                        dialog.insert_char(c);
+                    }
+                    KeyCode::Backspace => {
+                        dialog.delete_char();
+                    }
+                    KeyCode::Left => {
+                        dialog.move_cursor_left();
+                    }
+                    KeyCode::Right => {
+                        dialog.move_cursor_right();
+                    }
+                    KeyCode::Up => {
+                        dialog.move_selection_up();
+                    }
+                    KeyCode::Down => {
+                        dialog.move_selection_down();
+                    }
+                    KeyCode::Tab => {
+                        // Autocomplete - select current command
+                        if let Some(cmd) = dialog.get_selected_command() {
+                            dialog.input = cmd;
+                            dialog.cursor_position = dialog.input.len();
+                            dialog.filter_commands();
+                        }
+                    }
+                    KeyCode::Enter => {
+                        // Execute selected command
+                        if let Some(cmd) = dialog.get_selected_command() {
+                            self.dialog = None;
+                            // Remove the leading /
+                            let command = if cmd.starts_with('/') {
+                                &cmd[1..]
+                            } else {
+                                &cmd
+                            };
+                            self.handle_special_command(command).await?;
+                        }
+                    }
+                    KeyCode::Esc => {
+                        self.dialog = None;
+                    }
+                    _ => {}
+                }
+            }
+            Some(Dialog::Search(dialog)) => {
+                match dialog.state {
+                    SearchState::Setup => {
+                        // Handle search setup input
+                        match key.code {
+                            KeyCode::Enter => {
+                                if !dialog.criteria.pattern.is_empty() {
+                                    // Start search execution
+                                    dialog.state = SearchState::Searching;
+                                    dialog.results.clear();
+                                    dialog.search_progress = None;
+                                    
+                                    // Execute search in background
+                                    let criteria = dialog.criteria.clone();
+                                    let search_path = self.state.active_panel().current_dir.clone();
+                                    
+                                    let (tx, rx) = mpsc::unbounded_channel();
+                                    let search_criteria = criteria.clone();
+                                    
+                                    // Store the receiver
+                                    self.search_rx = Some(rx);
+                                    
+                                    tokio::spawn(async move {
+                                        use cortex_core::{SearchEngine, SearchProgress};
+                                        
+                                        match SearchEngine::new(search_criteria) {
+                                            Ok(mut engine) => {
+                                                let _ = engine.search(&search_path, tx).await;
+                                            }
+                                            Err(e) => {
+                                                log::error!("Failed to create search engine: {}", e);
+                                            }
+                                        }
+                                    });
+                                    
+                                    self.state.set_status_message(format!("Searching for '{}'...", criteria.pattern));
+                                }
+                            }
+                            KeyCode::Esc => {
+                                self.dialog = None;
+                            }
+                            KeyCode::Char(c) => {
+                                dialog.criteria.pattern.push(c);
+                            }
+                            KeyCode::Backspace => {
+                                dialog.criteria.pattern.pop();
+                            }
+                            KeyCode::Tab => {
+                                // Cycle through input fields
+                            }
+                            KeyCode::Char(' ') => {
+                                // Toggle options
+                                dialog.toggle_case_sensitive();
+                            }
+                            _ => {}
+                        }
+                    }
+                    SearchState::Searching => {
+                        // Handle search in progress
+                        match key.code {
+                            KeyCode::Esc => {
+                                // Cancel search
+                                self.search_rx = None; // Drop the receiver to stop processing
+                                dialog.state = SearchState::Results; // Show results collected so far
+                                self.state.set_status_message(format!(
+                                    "Search cancelled: {} results found",
+                                    dialog.results.len()
+                                ));
+                            }
+                            _ => {}
+                        }
+                    }
+                    SearchState::Results => {
+                        // Handle search results navigation
+                        match key.code {
+                            KeyCode::Up => dialog.move_selection_up(),
+                            KeyCode::Down => dialog.move_selection_down(),
+                            KeyCode::Enter => {
+                                // Navigate to selected file
+                                if let Some(path) = dialog.get_selected_path() {
+                                    if let Some(parent) = path.parent() {
+                                        let panel = self.state.active_panel_mut();
+                                        panel.current_dir = parent.to_path_buf();
+                                        Self::refresh_panel(panel)?;
+                                    }
+                                }
+                                self.dialog = None;
+                            }
+                            KeyCode::F(7) => {
+                                // New search
+                                self.dialog = Some(Dialog::Search(SearchDialog::new()));
+                            }
+                            KeyCode::Esc => {
+                                self.dialog = None;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Some(Dialog::Connection(dialog)) => {
+                match key.code {
+                    KeyCode::Tab => {
+                        dialog.next_field();
+                    }
+                    KeyCode::BackTab => {
+                        dialog.prev_field();
+                    }
+                    KeyCode::Char(c) if key.modifiers == KeyModifiers::CONTROL && c == 't' => {
+                        dialog.toggle_auth_method();
+                    }
+                    KeyCode::Char(c) => {
+                        dialog.insert_char(c);
+                    }
+                    KeyCode::Backspace => {
+                        dialog.delete_char();
+                    }
+                    KeyCode::Left => {
+                        dialog.move_cursor_left();
+                    }
+                    KeyCode::Right => {
+                        dialog.move_cursor_right();
+                    }
+                    KeyCode::Enter => {
+                        // Attempt to connect
+                        if !dialog.host.is_empty() && !dialog.username.is_empty() {
+                            let credentials = RemoteCredentials {
+                                username: dialog.username.clone(),
+                                password: if dialog.use_private_key || dialog.password.is_empty() { None } else { Some(dialog.password.clone()) },
+                                private_key_path: if dialog.use_private_key && !dialog.private_key_path.is_empty() { 
+                                    Some(std::path::PathBuf::from(&dialog.private_key_path)) 
+                                } else { 
+                                    None 
+                                },
+                                passphrase: if dialog.use_private_key && !dialog.password.is_empty() { 
+                                    Some(dialog.password.clone()) 
+                                } else { 
+                                    None 
+                                },
+                            };
+                            
+                            let port = dialog.port.parse::<u16>().unwrap_or(match dialog.connection_type {
+                                ConnectionType::Sftp => 22,
+                                ConnectionType::Ftp => 21,
+                            });
+                            
+                            let host = dialog.host.clone();
+                            let username = dialog.username.clone();
+                            
+                            match dialog.connection_type {
+                                ConnectionType::Sftp => {
+                                    let vfs_path = VfsPath::Sftp {
+                                        host: host.clone(),
+                                        port,
+                                        username: username.clone(),
+                                        path: "/".to_string(),
+                                    };
+                                    
+                                    // Try to connect and navigate
+                                    match self.connect_sftp(&credentials, &vfs_path).await {
+                                        Ok(_) => {
+                                            // Store credentials for future use
+                                            self.state.store_connection_credentials(
+                                                &host, 
+                                                port, 
+                                                &username, 
+                                                credentials
+                                            );
+                                            self.dialog = None;
+                                            self.state.set_status_message(format!("Connected to {}", host));
+                                        }
+                                        Err(e) => {
+                                            self.dialog = Some(Dialog::Error(
+                                                ErrorDialog::new(format!("Connection failed: {}", e))
+                                            ));
+                                        }
+                                    }
+                                }
+                                ConnectionType::Ftp => {
+                                    // FTP support shows a message for now
+                                    self.state.set_status_message("FTP support is under development - use SFTP for now");
+                                    self.dialog = None;
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Esc => {
+                        self.dialog = None;
+                    }
+                    _ => {}
+                }
+            }
+            Some(Dialog::Plugin(dialog)) => {
+                match key.code {
+                    KeyCode::Up => {
+                        dialog.move_selection_up();
+                    }
+                    KeyCode::Down => {
+                        dialog.move_selection_down();
+                    }
+                    KeyCode::Enter => {
+                        dialog.toggle_details();
+                    }
+                    KeyCode::Backspace if dialog.show_details => {
+                        dialog.show_details = false;
+                    }
+                    KeyCode::Char('r') | KeyCode::Char('R') => {
+                        // Reload plugins
+                        if let Err(e) = Self::load_plugins(&mut self.state).await {
+                            self.dialog = Some(Dialog::Error(
+                                ErrorDialog::new(format!("Failed to reload plugins: {}", e))
+                            ));
+                        } else {
+                            let plugin_info = self.state.plugin_manager.get_plugin_info();
+                            let plugin_states: Vec<bool> = plugin_info.iter()
+                                .map(|p| self.state.plugin_manager.is_plugin_enabled(&p.name))
+                                .collect();
+                            *dialog = PluginDialog::with_states(plugin_info, plugin_states);
+                            self.state.set_status_message("Plugins reloaded");
+                        }
+                    }
+                    KeyCode::Char(' ') => {
+                        // Toggle plugin enable/disable
+                        if let Some(plugin) = dialog.get_selected_plugin() {
+                            let plugin_name = plugin.name.clone();
+                            match self.state.plugin_manager.toggle_plugin(&plugin_name) {
+                                Ok(new_state) => {
+                                    dialog.toggle_selected_plugin();
+                                    let status = if new_state { "enabled" } else { "disabled" };
+                                    self.state.set_status_message(format!("Plugin '{}' {}", plugin_name, status));
+                                }
+                                Err(e) => {
+                                    self.state.set_status_message(format!("Failed to toggle plugin: {}", e));
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Esc => {
+                        self.dialog = None;
+                    }
+                    _ => {}
+                }
+            }
+            Some(Dialog::Config(dialog)) => {
+                if dialog.editing {
+                    // Handle editing mode
+                    match key.code {
+                        KeyCode::Char(c) => {
+                            dialog.insert_char(c);
+                        }
+                        KeyCode::Backspace => {
+                            dialog.delete_char();
+                        }
+                        KeyCode::Left => {
+                            dialog.move_cursor_left();
+                        }
+                        KeyCode::Right => {
+                            dialog.move_cursor_right();
+                        }
+                        KeyCode::Enter => {
+                            dialog.confirm_edit();
+                        }
+                        KeyCode::Esc => {
+                            dialog.cancel_edit();
+                        }
+                        _ => {}
+                    }
+                } else {
+                    // Handle navigation mode
+                    match key.code {
+                        KeyCode::Up => {
+                            dialog.move_selection_up();
+                        }
+                        KeyCode::Down => {
+                            dialog.move_selection_down();
+                        }
+                        KeyCode::Left => {
+                            dialog.prev_tab();
+                        }
+                        KeyCode::Right => {
+                            dialog.next_tab();
+                        }
+                        KeyCode::Enter => {
+                            dialog.start_edit();
+                        }
+                        KeyCode::Char('s') | KeyCode::Char('S') => {
+                            // Save configuration
+                            let config = dialog.config.clone();
+                            if let Err(e) = self.state.config_manager.update(|c| *c = config) {
+                                self.dialog = Some(Dialog::Error(
+                                    ErrorDialog::new(format!("Failed to save configuration: {}", e))
+                                ));
+                            } else {
+                                Self::apply_configuration(&mut self.state);
+                                Self::refresh_panel(&mut self.state.left_panel).ok();
+                                Self::refresh_panel(&mut self.state.right_panel).ok();
+                                self.state.set_status_message("Configuration saved and applied");
+                            }
+                        }
+                        KeyCode::Esc => {
+                            self.dialog = None;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Some(Dialog::SaveConfirm(dialog)) => {
+                match key.code {
+                    KeyCode::Left | KeyCode::Right => {
+                        dialog.next_choice();
+                    }
+                    KeyCode::Tab => {
+                        dialog.next_choice();
+                    }
+                    KeyCode::BackTab => {
+                        dialog.prev_choice();
+                    }
+                    KeyCode::Char('s') | KeyCode::Char('S') => {
+                        // Quick select Save
+                        if let Some(mut editor_dialog) = self.pending_editor.take() {
+                            let _ = editor_dialog.editor.save();
+                        }
+                        self.dialog = None;
+                        self.pending_editor = None;
+                    }
+                    KeyCode::Char('d') | KeyCode::Char('D') => {
+                        // Quick select Don't Save - close without saving
+                        self.dialog = None;
+                        self.pending_editor = None;
+                    }
+                    KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
+                        // Cancel - return to editor
+                        if let Some(editor_dialog) = self.pending_editor.take() {
+                            self.dialog = Some(Dialog::Editor(editor_dialog));
+                        } else {
+                            self.dialog = None;
+                        }
+                    }
+                    KeyCode::Enter => {
+                        match dialog.selection {
+                            SaveChoice::Save => {
+                                // Save and close
+                                if let Some(mut editor_dialog) = self.pending_editor.take() {
+                                    let _ = editor_dialog.editor.save();
+                                }
+                                self.dialog = None;
+                                self.pending_editor = None;
+                            }
+                            SaveChoice::DontSave => {
+                                // Close without saving
+                                self.dialog = None;
+                                self.pending_editor = None;
+                            }
+                            SaveChoice::Cancel => {
+                                // Return to editor
+                                if let Some(editor_dialog) = self.pending_editor.take() {
+                                    self.dialog = Some(Dialog::Editor(editor_dialog));
+                                } else {
+                                    self.dialog = None;
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
             None => {}
         }
         
         Ok(true)
     }
 
-    async fn handle_input(&mut self, binding: KeyBinding) -> Result<bool> {
-        use cortex_core::FileType;
+    async fn connect_sftp(&mut self, credentials: &RemoteCredentials, vfs_path: &VfsPath) -> Result<()> {
+        // Create a temporary VFS with SFTP provider to test connection
+        let sftp_provider = SftpProvider::new(credentials.clone());
         
-        match binding {
-            KeyBinding::Quit => return Ok(false),
-            
-            KeyBinding::Help => {
-                self.dialog = Some(Dialog::Help(HelpDialog::new()));
-            }
-            
-            KeyBinding::Up => {
-                let panel = self.state.active_panel_mut();
-                panel.move_selection_up();
-                panel.update_view_offset(self.terminal.size()?.height as usize - 5);
-            }
-            
-            KeyBinding::Down => {
-                let panel = self.state.active_panel_mut();
-                panel.move_selection_down();
-                panel.update_view_offset(self.terminal.size()?.height as usize - 5);
-            }
-            
-            KeyBinding::PageUp => {
-                let height = self.terminal.size()?.height as usize - 5;
-                let panel = self.state.active_panel_mut();
-                panel.move_selection_page_up(height);
-                panel.update_view_offset(height);
-            }
-            
-            KeyBinding::PageDown => {
-                let height = self.terminal.size()?.height as usize - 5;
-                let panel = self.state.active_panel_mut();
-                panel.move_selection_page_down(height);
-                panel.update_view_offset(height);
-            }
-            
-            KeyBinding::Home => {
-                let panel = self.state.active_panel_mut();
-                panel.move_selection_home();
-                panel.update_view_offset(self.terminal.size()?.height as usize - 5);
-            }
-            
-            KeyBinding::End => {
-                let panel = self.state.active_panel_mut();
-                panel.move_selection_end();
-                panel.update_view_offset(self.terminal.size()?.height as usize - 5);
-            }
-            
-            KeyBinding::Enter | KeyBinding::Right => {
-                let panel = self.state.active_panel_mut();
-                if let Some(entry) = panel.current_entry() {
-                    if entry.file_type == FileType::Directory {
-                        let new_dir = if entry.name == ".." {
-                            panel.current_dir.parent().map(|p| p.to_path_buf())
-                        } else {
-                            Some(entry.path.clone())
-                        };
-                        
-                        if let Some(dir) = new_dir {
-                            panel.current_dir = dir;
-                            panel.selected_index = 0;
-                            panel.view_offset = 0;
-                            Self::refresh_panel(panel)?;
-                        }
-                    }
-                }
-            }
-            
-            KeyBinding::Back | KeyBinding::Left => {
-                let panel = self.state.active_panel_mut();
-                if let Some(parent) = panel.current_dir.parent() {
-                    panel.current_dir = parent.to_path_buf();
-                    panel.selected_index = 0;
-                    panel.view_offset = 0;
-                    Self::refresh_panel(panel)?;
-                }
-            }
-            
-            KeyBinding::Tab => {
-                self.state.toggle_panel();
-            }
-            
-            KeyBinding::Copy => {
-                if let Some(operation) = OperationManager::prepare_copy(&self.state).await {
-                    self.state.pending_operation = Some(operation.clone());
-                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
-                }
-            }
-            
-            KeyBinding::Move => {
-                if let Some(operation) = OperationManager::prepare_move(&self.state).await {
-                    self.state.pending_operation = Some(operation.clone());
-                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
-                }
-            }
-            
-            KeyBinding::Delete => {
-                if let Some(operation) = OperationManager::prepare_delete(&self.state).await {
-                    self.state.pending_operation = Some(operation.clone());
-                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
-                }
-            }
-            
-            KeyBinding::MakeDir => {
-                self.dialog = Some(Dialog::Input(
-                    InputDialog::new("Create Directory", "Enter directory name:")
-                ));
-                self.state.pending_operation = Some(FileOperation::CreateDir {
-                    path: PathBuf::new(),
-                });
-            }
-            
-            KeyBinding::Rename => {
-                if let Some(entry) = self.state.active_panel().current_entry() {
-                    if entry.name != ".." {
-                        self.dialog = Some(Dialog::Input(
-                            InputDialog::new("Rename", "Enter new name:")
-                                .with_value(&entry.name)
-                        ));
-                        self.state.pending_operation = Some(FileOperation::Rename {
-                            old_path: entry.path.clone(),
-                            new_name: entry.name.clone(),
-                        });
-                    }
-                }
-            }
-            
-            KeyBinding::ToggleHidden => {
-                let panel = self.state.active_panel_mut();
-                panel.show_hidden = !panel.show_hidden;
-                Self::refresh_panel(panel)?;
-            }
-            
-            KeyBinding::ToggleMark => {
-                let panel = self.state.active_panel_mut();
-                panel.toggle_mark_current();
-                panel.move_selection_down();
-                panel.update_view_offset(self.terminal.size()?.height as usize - 5);
-            }
-            
-            KeyBinding::MarkAll => {
-                let panel = self.state.active_panel_mut();
-                for entry in &panel.entries {
-                    if entry.name != ".." {
-                        panel.marked_files.push(entry.path.clone());
-                    }
-                }
-            }
-            
-            KeyBinding::UnmarkAll => {
-                let panel = self.state.active_panel_mut();
-                panel.clear_marks();
-            }
-            
-            KeyBinding::Refresh => {
-                Self::refresh_panel(self.state.active_panel_mut())?;
-                let inactive = match self.state.active_panel {
-                    cortex_core::ActivePanel::Left => &mut self.state.right_panel,
-                    cortex_core::ActivePanel::Right => &mut self.state.left_panel,
-                };
-                Self::refresh_panel(inactive)?;
-            }
-            
-            KeyBinding::CommandMode => {
-                self.state.command_mode = true;
-                self.state.command_cursor = self.state.command_line.len();
-            }
-            
-            _ => {}
-        }
+        // Try to list the root directory to verify connection
+        sftp_provider.list_entries(vfs_path)?;
         
-        Ok(true)
+        // If successful, navigate to the remote location
+        self.state.navigate_into_vfs(vfs_path.clone())?;
+        
+        Ok(())
+    }
+
+    async fn connect_ftp(&mut self, credentials: &RemoteCredentials, vfs_path: &VfsPath) -> Result<()> {
+        // Create a temporary VFS with FTP provider to test connection
+        let ftp_provider = FtpProvider::new(credentials.clone());
+        
+        // Try to list the root directory to verify connection
+        ftp_provider.list_entries(vfs_path)?;
+        
+        // If successful, navigate to the remote location
+        self.state.navigate_into_vfs(vfs_path.clone())?;
+        
+        Ok(())
     }
 
     async fn execute_operation(&mut self, operation: FileOperation) -> Result<()> {
@@ -610,6 +1603,51 @@ impl App {
         }
     }
 
+    fn handle_search_progress(&mut self, progress: cortex_core::SearchProgress) {
+        use cortex_core::SearchProgress;
+        use cortex_tui::SearchProgressInfo;
+        
+        if let Some(Dialog::Search(ref mut dialog)) = self.dialog {
+            match progress {
+                SearchProgress::Started { total_dirs } => {
+                    dialog.state = SearchState::Searching;
+                    dialog.search_progress = Some(SearchProgressInfo {
+                        current_path: PathBuf::new(),
+                        searched: 0,
+                        total: total_dirs,
+                        found: 0,
+                    });
+                }
+                SearchProgress::Searching { current_path, searched, total } => {
+                    if let Some(ref mut prog) = dialog.search_progress {
+                        prog.current_path = current_path;
+                        prog.searched = searched;
+                        prog.total = total;
+                        prog.found = dialog.results.len();
+                    }
+                }
+                SearchProgress::Found { result } => {
+                    dialog.results.push(result);
+                    if let Some(ref mut prog) = dialog.search_progress {
+                        prog.found = dialog.results.len();
+                    }
+                }
+                SearchProgress::Completed { total_found, elapsed_ms } => {
+                    dialog.state = SearchState::Results;
+                    dialog.selected_result = 0;
+                    self.state.set_status_message(format!(
+                        "Search completed: {} results in {}ms", 
+                        total_found, elapsed_ms
+                    ));
+                    self.search_rx = None;
+                }
+                SearchProgress::Error { path, error } => {
+                    log::warn!("Search error at {:?}: {}", path, error);
+                }
+            }
+        }
+    }
+
     fn refresh_panel(panel: &mut cortex_core::PanelState) -> Result<()> {
         panel.entries = FileSystem::list_directory(&panel.current_dir, panel.show_hidden)?;
         panel.sort_entries();
@@ -619,6 +1657,183 @@ impl App {
         }
         
         Ok(())
+    }
+
+    async fn load_plugins(state: &mut AppState) -> Result<()> {
+        let plugin_dir = std::env::current_dir()?.join("plugins");
+        
+        if !plugin_dir.exists() {
+            return Ok(()); // No plugins directory, that's fine
+        }
+
+        for entry in std::fs::read_dir(plugin_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            
+            if path.extension().and_then(|s| s.to_str()) == Some("lua") {
+                match LuaPlugin::new(path.clone()) {
+                    Ok(mut plugin) => {
+                        if let Err(e) = plugin.load_script() {
+                            eprintln!("Warning: Failed to load plugin '{}': {}", path.display(), e);
+                            continue;
+                        }
+                        
+                        let plugin_name = plugin.info().name.clone();
+                        
+                        match state.plugin_manager.load_plugin(Box::new(plugin)).await {
+                            Ok(_) => println!("Loaded plugin: {}", plugin_name),
+                            Err(e) => eprintln!("Warning: Failed to register plugin '{}': {}", plugin_name, e),
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to create plugin from '{}': {}", path.display(), e);
+                    }
+                }
+            }
+        }
+        
+        // Initialize all loaded plugins
+        let context = state.create_plugin_context();
+        if let Err(e) = state.plugin_manager.initialize_all(context).await {
+            eprintln!("Warning: Failed to initialize plugins: {}", e);
+        }
+        
+        Ok(())
+    }
+
+    async fn handle_plugin_command(&mut self, command: &str) -> Result<bool> {
+        let context = self.state.create_plugin_context();
+        
+        match self.state.plugin_manager.execute_command(command, Vec::new(), context).await {
+            Ok(result) => {
+                if !result.is_empty() {
+                    // Show plugin result in a dialog
+                    self.state.set_status_message(format!("Plugin {}: {}", command, result));
+                }
+                Ok(true)
+            }
+            Err(_) => Ok(false) // Command not handled by any plugin
+        }
+    }
+
+    async fn fire_plugin_event(&mut self, event: PluginEvent) {
+        let context = self.state.create_plugin_context();
+        if let Err(e) = self.state.plugin_manager.handle_event(event, context).await {
+            eprintln!("Warning: Plugin event handling failed: {}", e);
+        }
+    }
+
+    async fn init_file_monitor_with_callback(
+        state: &mut AppState, 
+        file_change_tx: mpsc::UnboundedSender<()>,
+        file_event_tx: mpsc::UnboundedSender<cortex_core::FileMonitorEvent>
+    ) -> Result<()> {
+        if state.auto_reload_enabled {
+            use cortex_core::{FileMonitorManager, EventCallback, ChangeNotification};
+            use std::sync::Arc;
+            
+            let monitor_manager = Arc::new(FileMonitorManager::new().await?);
+            monitor_manager.start().await?;
+            
+            // Set up callback for panel refresh and notifications
+            let callback: EventCallback = Arc::new(move |notification: ChangeNotification| {
+                log::debug!("File change detected: {} - {:?}", notification.path.display(), notification.event);
+                let _ = file_change_tx.send(());
+                let _ = file_event_tx.send(notification.event);
+            });
+            
+            monitor_manager.register_change_callback(callback).await;
+            
+            // Watch current directories
+            monitor_manager.watch_directory(&state.left_panel.current_dir, false).await?;
+            monitor_manager.watch_directory(&state.right_panel.current_dir, false).await?;
+            
+            state.file_monitor = Some(monitor_manager);
+        }
+        Ok(())
+    }
+
+    async fn navigate_to_directory(&mut self, new_path: PathBuf) -> Result<()> {
+        let current_panel = self.state.active_panel;
+        let _old_path = self.state.active_panel().current_dir.clone();
+        
+        // Update the panel
+        let panel = self.state.active_panel_mut();
+        panel.current_dir = new_path.clone();
+        panel.selected_index = 0;
+        panel.view_offset = 0;
+        Self::refresh_panel(panel)?;
+        
+        // Update file monitoring if active
+        if self.state.is_file_monitoring_active() {
+            if let Err(e) = self.state.update_file_monitoring(current_panel, &new_path).await {
+                log::warn!("Failed to update file monitoring: {}", e);
+            }
+        }
+        
+        Ok(())
+    }
+
+    fn handle_file_event(&mut self, event: cortex_core::FileMonitorEvent) {
+        use cortex_core::FileMonitorEvent;
+        
+        match event {
+            FileMonitorEvent::Created(path) => {
+                self.notification_manager.add_file_change(&path, NotificationType::FileCreated);
+            }
+            FileMonitorEvent::Modified(path) => {
+                self.notification_manager.add_file_change(&path, NotificationType::FileModified);
+            }
+            FileMonitorEvent::Deleted(path) => {
+                self.notification_manager.add_file_change(&path, NotificationType::FileDeleted);
+            }
+            FileMonitorEvent::Renamed { from, to } => {
+                self.notification_manager.add_file_rename(&from, &to);
+            }
+        }
+    }
+
+    fn apply_configuration(state: &mut AppState) {
+        let config = state.config_manager.get();
+        
+        // Apply general settings
+        state.left_panel.show_hidden = config.general.show_hidden;
+        state.right_panel.show_hidden = config.general.show_hidden;
+        
+        // Apply sort settings
+        let sort_mode = match config.panels.default_sort.as_str() {
+            "name" => cortex_core::SortMode::Name,
+            "size" => cortex_core::SortMode::Size,
+            "modified" => cortex_core::SortMode::Modified,
+            "extension" => cortex_core::SortMode::Extension,
+            _ => cortex_core::SortMode::Name,
+        };
+        state.left_panel.sort_mode = sort_mode;
+        state.right_panel.sort_mode = sort_mode;
+        
+        // Re-sort panels with new settings
+        state.left_panel.sort_entries();
+        state.right_panel.sort_entries();
+        
+        println!("Configuration applied: show_hidden={}, default_sort={}", 
+                config.general.show_hidden, config.panels.default_sort);
+    }
+
+    async fn cleanup_and_exit(&mut self) -> Result<()> {
+        // Stop file monitoring if active
+        if let Some(ref monitor) = self.state.file_monitor {
+            if let Err(e) = monitor.stop().await {
+                log::warn!("Failed to stop file monitor: {}", e);
+            }
+        }
+        
+        // Cleanup terminal
+        disable_raw_mode()?;
+        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+        
+        // Force exit all spawned tasks by terminating the process
+        // This ensures no background tasks keep running
+        std::process::exit(0);
     }
 }
 

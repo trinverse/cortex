@@ -2,6 +2,14 @@
 
 A fast, cross-platform orthodox file manager inspired by Far Manager, with a modern terminal UI.
 
+## 📚 Documentation
+
+All documentation is organized in the [`docs/`](./docs/) directory:
+- [Quick Start Guide](./docs/guides/QUICKSTART.md)
+- [Architecture & Planning](./docs/cortex-architecture-plan.md)
+- [Development Guide](./docs/development/DEVELOPMENT.md)
+- [Full Documentation Index](./docs/README.md)
+
 ## Features
 
 - **Dual-panel interface** - Classic orthodox file manager layout

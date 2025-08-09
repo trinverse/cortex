@@ -1,0 +1,46 @@
+# Cortex File Manager Configuration
+# This is a sample configuration file showing all available options
+
+[general]
+show_hidden = false             # Show hidden files by default
+confirm_delete = true           # Ask for confirmation before deleting files  
+show_icons = false              # Display file type icons (not yet implemented)
+terminal = "bash"               # Default terminal for command execution
+editor = "vim"                  # Default text editor
+auto_reload = true              # Automatically reload panels when files change
+confirm_operations = true       # Ask for confirmation for file operations
+enable_sound = false            # Enable sound notifications (not yet implemented) 
+plugin_directory = "plugins"    # Directory to load plugins from
+
+[panels]
+default_sort = "name"           # Default sort mode: name, size, modified, extension
+show_size = true                # Show file sizes in panels
+show_permissions = true         # Show file permissions
+show_modified = true            # Show last modified date
+
+[colors]
+selection_bg = "blue"           # Background color for selected items
+directory_fg = "cyan"           # Color for directories
+executable_fg = "green"         # Color for executable files
+symlink_fg = "magenta"          # Color for symbolic links
+
+[plugins]
+enable_plugins = true           # Enable the plugin system
+auto_reload_plugins = false     # Automatically reload plugins when changed
+allow_unsafe_plugins = false    # Allow plugins that may be unsafe
+disabled_plugins = []           # List of disabled plugin names
+
+[network]
+connection_timeout = 30         # Network connection timeout in seconds
+save_credentials = false        # Save connection credentials (encrypted)
+verify_ssl = false              # Verify SSL certificates for secure connections
+enable_compression = false      # Enable compression for network transfers
+known_hosts = []                # List of known SSH hosts
+
+[[keybindings.custom]]
+key = "Ctrl+G"
+command = "/find"
+
+[[keybindings.custom]]  
+key = "F10"
+command = "/config"
