@@ -22,7 +22,7 @@ pub struct TextEditor {
 }
 
 #[derive(Debug, Clone)]
-struct EditorState {
+pub struct EditorState {
     lines: Vec<String>,
     cursor_row: usize,
     cursor_col: usize,

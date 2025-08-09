@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
-use cortex_core::{AppState, FileSystem, FileOperation, FileType, VfsPath, VirtualFileSystem, RemoteCredentials, SftpProvider, FtpProvider, VfsProvider, is_supported_archive, LuaPlugin, PluginEvent, DirectoryCache, CacheRefresher};
+use cortex_core::{AppState, FileSystem, FileOperation, FileType, VfsPath, RemoteCredentials, LuaPlugin, PluginEvent, DirectoryCache, CacheRefresher};
 use cortex_plugins::Plugin;
-use cortex_tui::{Dialog, InputDialog, ProgressDialog, ErrorDialog, HelpDialog, SaveConfirmDialog, SaveChoice, Event, EventHandler, UI, FileViewer, ViewerDialog, TextEditor, EditorDialog, FilterDialog, CommandPaletteDialog, SearchDialog, SearchState, ConnectionDialog, ConnectionType, PluginDialog, ConfigDialog, NotificationManager, NotificationType, MouseHandler, MouseAction, Position, ContextMenu, ContextMenuAction, MouseRegion, MouseRegionType, MouseRegionManager};
+use cortex_tui::{Dialog, InputDialog, ProgressDialog, ErrorDialog, HelpDialog, SaveConfirmDialog, SaveChoice, Event, EventHandler, UI, FileViewer, ViewerDialog, TextEditor, EditorDialog, FilterDialog, CommandPaletteDialog, SearchDialog, SearchState, ConnectionDialog, ConnectionType, PluginDialog, ConfigDialog, NotificationManager, NotificationType, MouseHandler, MouseAction, Position, ContextMenu, ContextMenuAction, MouseRegionManager};
 use crossterm::{
     event::{EnableMouseCapture, DisableMouseCapture, KeyCode, KeyModifiers},
     execute,
@@ -14,6 +14,7 @@ use tokio::sync::mpsc;
 
 mod command;
 mod operations;
+mod update;
 use command::CommandProcessor;
 use operations::OperationManager;
 
@@ -26,6 +27,12 @@ struct Args {
 
     #[arg(short, long, help = "Show version information")]
     version: bool,
+    
+    #[arg(long, help = "Check for updates")]
+    check_updates: bool,
+    
+    #[arg(long, help = "Update to latest version")]
+    update: bool,
 }
 
 #[tokio::main]
@@ -36,6 +43,61 @@ async fn main() -> Result<()> {
     
     if args.version {
         println!("Cortex v{}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    
+    // Handle update checking
+    if args.check_updates {
+        use update::UpdateManager;
+        
+        println!("Checking for updates...");
+        let manager = UpdateManager::new()?;
+        
+        match manager.check_for_updates().await {
+            Ok(Some(update_info)) => {
+                println!("Update available: v{}", update_info.version);
+                println!("Release date: {}", update_info.release_date);
+                println!("Download size: {} bytes", update_info.size);
+                println!("\nRelease notes:\n{}", update_info.release_notes);
+                println!("\nRun 'cortex --update' to install");
+            }
+            Ok(None) => {
+                println!("You are running the latest version");
+            }
+            Err(e) => {
+                eprintln!("Failed to check for updates: {}", e);
+            }
+        }
+        return Ok(());
+    }
+    
+    // Handle update installation
+    if args.update {
+        use update::UpdateManager;
+        
+        println!("Checking for updates...");
+        let manager = UpdateManager::new()?;
+        
+        match manager.check_for_updates().await {
+            Ok(Some(update_info)) => {
+                println!("Found update: v{}", update_info.version);
+                println!("Downloading...");
+                
+                if let Err(e) = manager.install_update(update_info).await {
+                    eprintln!("Failed to install update: {}", e);
+                    std::process::exit(1);
+                }
+                
+                println!("Update installed successfully!");
+                println!("Please restart Cortex to use the new version");
+            }
+            Ok(None) => {
+                println!("You are already running the latest version");
+            }
+            Err(e) => {
+                eprintln!("Failed to check for updates: {}", e);
+            }
+        }
         return Ok(());
     }
 
@@ -58,7 +120,7 @@ struct App {
     notification_manager: NotificationManager,
     mouse_handler: MouseHandler,
     context_menu: Option<ContextMenu>,
-    mouse_regions: MouseRegionManager,
+    _mouse_regions: MouseRegionManager,
 }
 
 impl App {
@@ -123,7 +185,7 @@ impl App {
             notification_manager: NotificationManager::new(),
             mouse_handler: MouseHandler::new(),
             context_menu: None,
-            mouse_regions: MouseRegionManager::new(),
+            _mouse_regions: MouseRegionManager::new(),
         })
     }
 
@@ -312,11 +374,9 @@ impl App {
                             let panel = self.state.active_panel_mut();
                             Self::refresh_panel(panel)?;
                         } else {
-                            // Navigate deeper into VFS
-                            let vfs = VirtualFileSystem::new();
-                            if let Some(new_path) = vfs.navigate_into(&entry) {
-                                self.state.navigate_into_vfs(new_path)?;
-                            }
+                            // VFS navigation temporarily disabled
+                            // SSH/FTP support requires OpenSSL
+                            self.state.set_status_message("VFS navigation not available in this build");
                         }
                     }
                 } else {
@@ -337,7 +397,10 @@ impl App {
                                 panel.view_offset = 0;
                                 Self::refresh_panel(panel)?;
                             }
-                        } else if is_supported_archive(&entry.path) {
+                        } else if entry.path.extension()
+                            .and_then(|ext| ext.to_str())
+                            .map(|ext| matches!(ext.to_lowercase().as_str(), "zip" | "tar" | "gz" | "7z"))
+                            .unwrap_or(false) {
                             // Navigate into archive
                             let vfs_path = VfsPath::Archive {
                                 archive_path: entry.path.clone(),
@@ -461,6 +524,22 @@ impl App {
                 }
             }
             
+            // Delete key - move to trash by default
+            (KeyCode::Delete, KeyModifiers::NONE) => {
+                if let Some(operation) = OperationManager::prepare_delete_to_trash(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            
+            // Shift+Delete - permanent delete
+            (KeyCode::Delete, KeyModifiers::SHIFT) => {
+                if let Some(operation) = OperationManager::prepare_delete(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            
             // Control keys
             (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
                 // Properly cleanup and exit
@@ -521,6 +600,20 @@ impl App {
                 self.dialog = Some(Dialog::Filter(
                     FilterDialog::with_current_filter(current_filter.as_ref())
                 ));
+            }
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                // Copy to clipboard
+                if let Some(operation) = OperationManager::prepare_copy_to_clipboard(&self.state).await {
+                    self.execute_operation(operation).await?;
+                    self.state.set_status_message("Files copied to clipboard");
+                }
+            }
+            (KeyCode::Char('v'), KeyModifiers::CONTROL) => {
+                // Paste from clipboard
+                if let Some(operation) = OperationManager::prepare_paste_from_clipboard(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
             }
             (KeyCode::Char('7'), KeyModifiers::ALT) => {
                 // Advanced search (Alt+F7)
@@ -1185,7 +1278,7 @@ impl App {
                                     self.search_rx = Some(rx);
                                     
                                     tokio::spawn(async move {
-                                        use cortex_core::{SearchEngine, SearchProgress};
+                                        use cortex_core::SearchEngine;
                                         
                                         match SearchEngine::new(search_criteria) {
                                             Ok(mut engine) => {
@@ -1203,6 +1296,10 @@ impl App {
                             KeyCode::Esc => {
                                 self.dialog = None;
                             }
+                            KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                // Toggle options with Ctrl+Space
+                                dialog.toggle_case_sensitive();
+                            }
                             KeyCode::Char(c) => {
                                 dialog.criteria.pattern.push(c);
                             }
@@ -1211,10 +1308,6 @@ impl App {
                             }
                             KeyCode::Tab => {
                                 // Cycle through input fields
-                            }
-                            KeyCode::Char(' ') => {
-                                // Toggle options
-                                dialog.toggle_case_sensitive();
                             }
                             _ => {}
                         }
@@ -1534,30 +1627,14 @@ impl App {
         Ok(true)
     }
 
-    async fn connect_sftp(&mut self, credentials: &RemoteCredentials, vfs_path: &VfsPath) -> Result<()> {
-        // Create a temporary VFS with SFTP provider to test connection
-        let sftp_provider = SftpProvider::new(credentials.clone());
-        
-        // Try to list the root directory to verify connection
-        sftp_provider.list_entries(vfs_path)?;
-        
-        // If successful, navigate to the remote location
-        self.state.navigate_into_vfs(vfs_path.clone())?;
-        
-        Ok(())
+    async fn connect_sftp(&mut self, _credentials: &RemoteCredentials, _vfs_path: &VfsPath) -> Result<()> {
+        // SSH/SFTP support temporarily disabled - requires OpenSSL
+        Err(anyhow::anyhow!("SSH/SFTP connections are not available in this build. Please install OpenSSL development packages."))
     }
 
-    async fn connect_ftp(&mut self, credentials: &RemoteCredentials, vfs_path: &VfsPath) -> Result<()> {
-        // Create a temporary VFS with FTP provider to test connection
-        let ftp_provider = FtpProvider::new(credentials.clone());
-        
-        // Try to list the root directory to verify connection
-        ftp_provider.list_entries(vfs_path)?;
-        
-        // If successful, navigate to the remote location
-        self.state.navigate_into_vfs(vfs_path.clone())?;
-        
-        Ok(())
+    async fn _connect_ftp(&mut self, _credentials: &RemoteCredentials, _vfs_path: &VfsPath) -> Result<()> {
+        // FTP support temporarily disabled - requires OpenSSL
+        Err(anyhow::anyhow!("FTP connections are not available in this build. Please install OpenSSL development packages."))
     }
 
     async fn execute_operation(&mut self, operation: FileOperation) -> Result<()> {
@@ -1568,8 +1645,12 @@ impl App {
             FileOperation::Copy { .. } => "Copying Files",
             FileOperation::Move { .. } => "Moving Files",
             FileOperation::Delete { .. } => "Deleting Files",
+            FileOperation::DeleteToTrash { .. } => "Moving to Trash",
+            FileOperation::RestoreFromTrash { .. } => "Restoring from Trash",
             FileOperation::CreateDir { .. } => "Creating Directory",
             FileOperation::Rename { .. } => "Renaming",
+            FileOperation::CopyToClipboard { .. } => "Copying to Clipboard",
+            FileOperation::PasteFromClipboard { .. } => "Pasting from Clipboard",
         };
         
         self.dialog = Some(Dialog::Progress(
@@ -1759,7 +1840,7 @@ impl App {
         }
     }
 
-    async fn fire_plugin_event(&mut self, event: PluginEvent) {
+    async fn _fire_plugin_event(&mut self, event: PluginEvent) {
         let context = self.state.create_plugin_context();
         if let Err(e) = self.state.plugin_manager.handle_event(event, context).await {
             eprintln!("Warning: Plugin event handling failed: {}", e);
@@ -2086,16 +2167,16 @@ impl App {
                 }
             }
             ContextMenuAction::Delete => {
-                // Delete operation (F8 functionality)
+                // Delete to trash operation
                 let targets = self.get_selected_files();
                 if !targets.is_empty() {
                     self.dialog = Some(Dialog::Confirm(
                         cortex_tui::dialogs::ConfirmDialog::new(
-                            "Delete Files",
-                            format!("Delete {} file(s)?", targets.len())
+                            "Move to Trash",
+                            format!("Move {} file(s) to trash?", targets.len())
                         )
                     ));
-                    self.state.pending_operation = Some(FileOperation::Delete { targets });
+                    self.state.pending_operation = Some(FileOperation::DeleteToTrash { targets });
                 }
             }
             ContextMenuAction::Rename => {

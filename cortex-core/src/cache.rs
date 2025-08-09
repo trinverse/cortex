@@ -347,7 +347,7 @@ impl DirectoryCache {
     }
     
     /// Update configuration
-    pub fn update_config(&self, new_config: CacheConfig) {
+    pub fn update_config(&self, _new_config: CacheConfig) {
         // This would require making config mutable with RwLock
         // For now, cache would need to be recreated with new config
     }

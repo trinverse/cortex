@@ -21,11 +21,27 @@ All documentation is organized in the [`docs/`](./docs/) directory:
 
 ## Installation
 
+### Quick Install
+
+#### Ubuntu/Debian
+```bash
+# Download the .deb package from releases
+wget https://github.com/trinverse/cortex/releases/download/v0.1.0/cortex_0.1.0_amd64.deb
+sudo dpkg -i cortex_0.1.0_amd64.deb
+```
+
+#### Homebrew (macOS/Linux)
+```bash
+# Add the tap
+brew tap trinverse/cortex
+brew install cortex
+```
+
 ### From Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/cortex-fm/cortex.git
+git clone https://github.com/trinverse/cortex.git
 cd cortex
 
 # Build with cargo
@@ -35,23 +51,20 @@ cargo build --release
 ./target/release/cortex
 ```
 
-### Using Cargo
+### Other Platforms
 
+#### Arch Linux (AUR)
 ```bash
-cargo install cortex
+yay -S cortex  # Coming soon
 ```
 
-### Package Managers (Coming Soon)
-
+#### Snap Store
 ```bash
-# macOS
-brew install cortex
+snap install cortex  # Coming soon
+```
 
-# Ubuntu/Debian
-apt install cortex
-
-# Windows
-winget install cortex
+#### Windows
+Download the MSI installer from the [releases page](https://github.com/trinverse/cortex/releases)
 ```
 
 ## Usage

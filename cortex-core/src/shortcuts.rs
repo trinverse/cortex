@@ -83,9 +83,13 @@ pub enum Action {
     Copy,
     Move,
     Delete,
+    DeleteToTrash,
+    RestoreFromTrash,
     Rename,
     CreateFile,
     CreateDirectory,
+    CopyToClipboard,
+    PasteFromClipboard,
     
     // Selection
     SelectItem,
@@ -227,6 +231,14 @@ impl ShortcutManager {
             Action::Delete,
         );
         shortcuts.insert(
+            KeyBinding { code: "Delete".to_string(), modifiers: vec![] },
+            Action::DeleteToTrash,
+        );
+        shortcuts.insert(
+            KeyBinding { code: "Delete".to_string(), modifiers: vec!["Shift".to_string()] },
+            Action::Delete,
+        );
+        shortcuts.insert(
             KeyBinding { code: "F9".to_string(), modifiers: vec![] },
             Action::Settings,
         );
@@ -260,7 +272,7 @@ impl ShortcutManager {
         );
         shortcuts.insert(
             KeyBinding { code: "c".to_string(), modifiers: vec!["Ctrl".to_string()] },
-            Action::Copy,
+            Action::CopyToClipboard,
         );
         shortcuts.insert(
             KeyBinding { code: "d".to_string(), modifiers: vec!["Ctrl".to_string()] },
@@ -312,7 +324,7 @@ impl ShortcutManager {
         );
         shortcuts.insert(
             KeyBinding { code: "v".to_string(), modifiers: vec!["Ctrl".to_string()] },
-            Action::Paste,
+            Action::PasteFromClipboard,
         );
         shortcuts.insert(
             KeyBinding { code: "x".to_string(), modifiers: vec!["Ctrl".to_string()] },

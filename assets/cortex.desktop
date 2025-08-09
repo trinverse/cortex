@@ -1,0 +1,26 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Cortex
+GenericName=File Manager
+Comment=Modern terminal file manager
+Exec=cortex %F
+Terminal=true
+Icon=cortex
+Categories=System;FileTools;FileManager;Utility;Core;
+Keywords=files;folders;browser;explorer;manager;organize;
+MimeType=inode/directory;
+Actions=new-window;root;
+
+StartupNotify=false
+StartupWMClass=Cortex
+
+[Desktop Action new-window]
+Name=Open New Window
+Exec=cortex --new-window %F
+Icon=cortex
+
+[Desktop Action root]
+Name=Open as Root
+Exec=pkexec cortex %F
+Icon=cortex

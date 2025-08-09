@@ -1,0 +1,103 @@
+name: Update Homebrew Formula
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish'
+        required: true
+
+jobs:
+  update-homebrew:
+    name: Update Homebrew Formula
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Download release artifacts
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          
+          # Download macOS builds
+          wget -q "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-x86_64-apple-darwin.tar.gz"
+          wget -q "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-aarch64-apple-darwin.tar.gz"
+          
+          # Download Linux build
+          wget -q "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-x86_64-unknown-linux-gnu.tar.gz"
+      
+      - name: Calculate checksums
+        id: checksums
+        run: |
+          SHA_DARWIN_X64=$(sha256sum cortex-*-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)
+          SHA_DARWIN_ARM64=$(sha256sum cortex-*-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)
+          SHA_LINUX_X64=$(sha256sum cortex-*-x86_64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)
+          
+          echo "darwin_x64=$SHA_DARWIN_X64" >> $GITHUB_OUTPUT
+          echo "darwin_arm64=$SHA_DARWIN_ARM64" >> $GITHUB_OUTPUT
+          echo "linux_x64=$SHA_LINUX_X64" >> $GITHUB_OUTPUT
+      
+      - name: Update Homebrew Formula
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          SHA_DARWIN_X64="${{ steps.checksums.outputs.darwin_x64 }}"
+          SHA_DARWIN_ARM64="${{ steps.checksums.outputs.darwin_arm64 }}"
+          SHA_LINUX_X64="${{ steps.checksums.outputs.linux_x64 }}"
+          
+          cat > cortex.rb << EOF
+          class Cortex < Formula
+            desc "Modern terminal file manager"
+            homepage "https://github.com/${{ github.repository }}"
+            version "$VERSION"
+            license "MIT"
+          
+            on_macos do
+              if Hardware::CPU.intel?
+                url "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-x86_64-apple-darwin.tar.gz"
+                sha256 "$SHA_DARWIN_X64"
+              else
+                url "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-aarch64-apple-darwin.tar.gz"
+                sha256 "$SHA_DARWIN_ARM64"
+              end
+            end
+          
+            on_linux do
+              url "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-x86_64-unknown-linux-gnu.tar.gz"
+              sha256 "$SHA_LINUX_X64"
+            end
+          
+            def install
+              bin.install "cortex"
+            end
+          
+            test do
+              assert_match "Cortex v$VERSION", shell_output("#{bin}/cortex --version")
+            end
+          end
+          EOF
+      
+      - name: Create Pull Request to Homebrew Tap
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: ${{ github.repository_owner }}/homebrew-cortex
+          commit-message: "Update Cortex to v${{ steps.get_version.outputs.version }}"
+          branch: update-v${{ steps.get_version.outputs.version }}
+          title: "Update Cortex to v${{ steps.get_version.outputs.version }}"
+          body: |
+            Updates Cortex formula to version ${{ steps.get_version.outputs.version }}
+            
+            Release notes: https://github.com/${{ github.repository }}/releases/tag/v${{ steps.get_version.outputs.version }}
+          base: main

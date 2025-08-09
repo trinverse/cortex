@@ -1,0 +1,111 @@
+name: Publish to Snap Store
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish'
+        required: true
+
+jobs:
+  publish-snap:
+    name: Build and Publish Snap
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Build release binary
+        run: cargo build --release
+      
+      - name: Install snapcraft
+        run: |
+          sudo snap install snapcraft --classic
+          sudo snap install lxd
+          sudo lxd init --auto
+      
+      - name: Create snapcraft.yaml
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          
+          mkdir -p snap
+          cat > snap/snapcraft.yaml << 'EOF'
+          name: cortex
+          base: core22
+          version: '$VERSION'
+          summary: Modern terminal file manager
+          description: |
+            Cortex is a modern terminal file manager built with Rust, designed 
+            for power users who demand efficiency, extensibility, and performance.
+            
+            Features:
+            - Dual-pane interface for efficient navigation
+            - Advanced file operations with progress tracking
+            - Plugin system with Lua scripting
+            - Archive support (zip, tar, 7z)
+            - Network operations (FTP/SFTP)
+            - Cross-platform compatibility
+          
+          grade: stable
+          confinement: classic
+          
+          architectures:
+            - build-on: amd64
+          
+          apps:
+            cortex:
+              command: bin/cortex
+              environment:
+                LD_LIBRARY_PATH: $SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET:$LD_LIBRARY_PATH
+          
+          parts:
+            cortex:
+              plugin: dump
+              source: .
+              stage-packages:
+                - libx11-6
+                - libxcb1
+                - libxrandr2
+                - libxinerama1
+                - libxcursor1
+                - libxi6
+              override-build: |
+                cp target/release/cortex $SNAPCRAFT_PART_INSTALL/bin/
+                chmod +x $SNAPCRAFT_PART_INSTALL/bin/cortex
+              organize:
+                cortex: bin/cortex
+          EOF
+          
+          # Update version
+          sed -i "s/\$VERSION/$VERSION/g" snap/snapcraft.yaml
+      
+      - name: Build snap
+        run: |
+          snapcraft --use-lxd
+      
+      - name: Install snap locally for testing
+        run: |
+          sudo snap install *.snap --dangerous --classic
+          cortex --version
+      
+      - name: Publish to Snap Store
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          echo "$SNAPCRAFT_STORE_CREDENTIALS" | snapcraft login --with -
+          snapcraft upload --release=stable *.snap

@@ -1,0 +1,54 @@
+{
+  "name": "Cortex File Manager",
+  "description": "Icon configuration for Cortex File Manager",
+  "icons": {
+    "main": {
+      "svg": "svg/cortex-icon.svg",
+      "sizes": [16, 24, 32, 48, 64, 96, 128, 256, 512, 1024]
+    },
+    "simple": {
+      "svg": "svg/cortex-icon-simple.svg",
+      "sizes": [16, 24, 32, 48, 64, 128, 256, 512]
+    },
+    "symbolic": {
+      "svg": "svg/cortex-icon-symbolic.svg",
+      "sizes": [16, 24, 32, 48]
+    },
+    "favicon": {
+      "svg": "svg/cortex-favicon.svg",
+      "sizes": [16, 32, 48, 64]
+    }
+  },
+  "platforms": {
+    "windows": {
+      "ico": {
+        "sizes": [16, 24, 32, 48, 64, 128, 256],
+        "source": "main"
+      }
+    },
+    "macos": {
+      "icns": {
+        "sizes": [16, 32, 64, 128, 256, 512, 1024],
+        "source": "main"
+      }
+    },
+    "linux": {
+      "desktop": {
+        "16x16": "png/cortex-16.png",
+        "24x24": "png/cortex-24.png",
+        "32x32": "png/cortex-32.png",
+        "48x48": "png/cortex-48.png",
+        "64x64": "png/cortex-64.png",
+        "128x128": "png/cortex-128.png",
+        "256x256": "png/cortex-256.png",
+        "scalable": "svg/cortex-icon.svg"
+      },
+      "symbolic": "svg/cortex-icon-symbolic.svg"
+    },
+    "web": {
+      "favicon": "svg/cortex-favicon.svg",
+      "apple-touch-icon": "png/cortex-180.png",
+      "og-image": "png/cortex-1200x630.png"
+    }
+  }
+}

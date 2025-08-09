@@ -8,8 +8,12 @@ pub enum Operation {
     Copy { src: PathBuf, dst: PathBuf },
     Move { src: PathBuf, dst: PathBuf },
     Delete { path: PathBuf },
+    DeleteToTrash { path: PathBuf },
+    RestoreFromTrash { path: PathBuf },
     CreateDir { path: PathBuf },
     Rename { old: PathBuf, new: PathBuf },
+    CopyToClipboard { paths: Vec<PathBuf> },
+    PasteFromClipboard { dst: PathBuf },
 }
 
 #[derive(Debug, Clone)]
@@ -48,11 +52,40 @@ impl OperationHandler for DefaultOperationHandler {
             Operation::Delete { path } => {
                 tokio::task::spawn_blocking(move || FileSystem::delete_entry(&path)).await?
             }
+            Operation::DeleteToTrash { path } => {
+                tokio::task::spawn_blocking(move || {
+                    let trash = cortex_platform::get_trash_handler();
+                    trash.move_to_trash(&path)
+                }).await?
+            }
+            Operation::RestoreFromTrash { path } => {
+                tokio::task::spawn_blocking(move || {
+                    let trash = cortex_platform::get_trash_handler();
+                    trash.restore_from_trash(&path)
+                }).await?
+            }
             Operation::CreateDir { path } => {
                 tokio::task::spawn_blocking(move || FileSystem::create_directory(&path)).await?
             }
             Operation::Rename { old, new } => {
                 tokio::task::spawn_blocking(move || FileSystem::move_entry(&old, &new)).await?
+            }
+            Operation::CopyToClipboard { paths } => {
+                tokio::task::spawn_blocking(move || {
+                    let clipboard = cortex_platform::get_clipboard_handler();
+                    let path_refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
+                    clipboard.copy_files(&path_refs)
+                }).await?
+            }
+            Operation::PasteFromClipboard { dst } => {
+                tokio::task::spawn_blocking(move || {
+                    let clipboard = cortex_platform::get_clipboard_handler();
+                    let files = clipboard.paste_files()?;
+                    // TODO: Actually copy the files from clipboard paths to dst
+                    // For now, just return success
+                    log::info!("Clipboard contains {} files to paste to {:?}", files.len(), dst);
+                    Ok(())
+                }).await?
             }
         };
 

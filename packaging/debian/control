@@ -1,0 +1,21 @@
+Source: cortex
+Section: utils
+Priority: optional
+Maintainer: Cortex Contributors <cortex@example.com>
+Build-Depends: debhelper (>= 9), cargo, rustc, libssl-dev, pkg-config
+Standards-Version: 4.5.0
+Homepage: https://github.com/cortex-fm/cortex
+
+Package: cortex
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Modern orthodox file manager with dual-panel interface
+ Cortex is a fast, cross-platform orthodox file manager inspired by
+ Far Manager, with a modern terminal UI. Features include:
+ .
+  - Dual-panel interface for efficient file management
+  - Keyboard-driven navigation with extensive shortcuts
+  - Cross-platform support (Windows, macOS, Linux)
+  - High performance built with Rust
+  - Plugin system with Lua scripting
+  - Modern TUI with clean, responsive interface

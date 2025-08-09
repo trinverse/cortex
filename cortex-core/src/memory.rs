@@ -64,7 +64,7 @@ impl StringPool {
 pub struct ObjectPool<T: Clone + Default> {
     available: Arc<RwLock<Vec<T>>>,
     in_use: Arc<RwLock<usize>>,
-    max_size: usize,
+    _max_size: usize,
 }
 
 impl<T: Clone + Default> ObjectPool<T> {
@@ -77,7 +77,7 @@ impl<T: Clone + Default> ObjectPool<T> {
         Self {
             available: Arc::new(RwLock::new(available)),
             in_use: Arc::new(RwLock::new(0)),
-            max_size,
+            _max_size: max_size,
         }
     }
     

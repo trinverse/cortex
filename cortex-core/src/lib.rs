@@ -16,7 +16,7 @@ pub use config::{Config, ConfigManager};
 pub use state::{ActivePanel, AppState, FileOperation, PanelState, SortMode};
 pub use cortex_plugins::{PluginManager, PluginContext, PluginEvent, PluginInfo, LuaPlugin};
 pub use search::{SearchCriteria, SearchEngine, SearchResult, SearchProgress, SearchType, SizeFilter, DateFilter};
-pub use vfs::{VirtualFileSystem, VfsPath, VfsEntry, VfsEntryType, VfsProvider, RemoteCredentials, SftpProvider, FtpProvider, is_supported_archive};
+pub use vfs::{VirtualFileSystem, VfsPath, VfsEntry, VfsEntryType, VfsProvider, RemoteCredentials};
 pub use file_monitor::{FileMonitor, FileMonitorManager, FileMonitorEvent, ChangeNotification, EventCallback};
 pub use cache::{DirectoryCache, CacheConfig, CacheStatistics, CacheRefresher};
 pub use virtual_scroll::{VirtualScroller, VirtualScrollConfig, VirtualScrollManager, VirtualScrollStats};

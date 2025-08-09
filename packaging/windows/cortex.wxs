@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Product Id="*" 
+             Name="Cortex File Manager" 
+             Language="1033" 
+             Version="0.1.0.0" 
+             Manufacturer="Cortex Contributors" 
+             UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
+        
+        <Package InstallerVersion="200" 
+                 Compressed="yes" 
+                 InstallScope="perMachine" />
+
+        <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+        <MediaTemplate EmbedCab="yes" />
+
+        <Feature Id="ProductFeature" Title="Cortex" Level="1">
+            <ComponentGroupRef Id="ProductComponents" />
+            <ComponentGroupRef Id="ProgramMenuComponents" />
+        </Feature>
+
+        <!-- UI Configuration -->
+        <UIRef Id="WixUI_InstallDir" />
+        <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+        
+        <!-- License -->
+        <WixVariable Id="WixUILicenseRtf" Value="LICENSE.rtf" />
+    </Product>
+
+    <Fragment>
+        <Directory Id="TARGETDIR" Name="SourceDir">
+            <Directory Id="ProgramFilesFolder">
+                <Directory Id="INSTALLFOLDER" Name="Cortex" />
+            </Directory>
+            <Directory Id="ProgramMenuFolder">
+                <Directory Id="ApplicationProgramsFolder" Name="Cortex"/>
+            </Directory>
+        </Directory>
+    </Fragment>
+
+    <Fragment>
+        <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+            <Component Id="CortexExecutable" Guid="B1C2D3E4-F5A6-7890-BCDE-F12345678901">
+                <File Id="CortexExe" 
+                      Source="$(var.SourceDir)\cortex.exe" 
+                      KeyPath="yes">
+                    <Shortcut Id="desktopShortcut"
+                              Directory="DesktopFolder"
+                              Name="Cortex"
+                              WorkingDirectory="INSTALLFOLDER"
+                              Advertise="yes"
+                              Icon="cortex.ico" />
+                </File>
+            </Component>
+        </ComponentGroup>
+
+        <ComponentGroup Id="ProgramMenuComponents" Directory="ApplicationProgramsFolder">
+            <Component Id="ApplicationShortcut" Guid="C2D3E4F5-A6B7-8901-CDEF-234567890123">
+                <Shortcut Id="ApplicationStartMenuShortcut"
+                          Name="Cortex File Manager"
+                          Description="Modern orthodox file manager"
+                          Target="[INSTALLFOLDER]cortex.exe"
+                          WorkingDirectory="INSTALLFOLDER"/>
+                <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall"/>
+                <RegistryValue Root="HKCU" 
+                               Key="Software\Cortex" 
+                               Name="installed" 
+                               Type="integer" 
+                               Value="1" 
+                               KeyPath="yes"/>
+            </Component>
+        </ComponentGroup>
+    </Fragment>
+
+    <Fragment>
+        <Icon Id="cortex.ico" SourceFile="cortex.ico"/>
+    </Fragment>
+</Wix>

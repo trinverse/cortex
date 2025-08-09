@@ -119,6 +119,49 @@ impl OperationManager {
         
         Some(FileOperation::Delete { targets })
     }
+    
+    pub async fn prepare_delete_to_trash(state: &AppState) -> Option<FileOperation> {
+        let panel = state.active_panel();
+        
+        let targets = if !panel.marked_files.is_empty() {
+            panel.marked_files.clone()
+        } else if let Some(entry) = panel.current_entry() {
+            if entry.name != ".." {
+                vec![entry.path.clone()]
+            } else {
+                return None;
+            }
+        } else {
+            return None;
+        };
+        
+        Some(FileOperation::DeleteToTrash { targets })
+    }
+    
+    pub async fn prepare_copy_to_clipboard(state: &AppState) -> Option<FileOperation> {
+        let panel = state.active_panel();
+        
+        let paths = if !panel.marked_files.is_empty() {
+            panel.marked_files.clone()
+        } else if let Some(entry) = panel.current_entry() {
+            if entry.name != ".." {
+                vec![entry.path.clone()]
+            } else {
+                return None;
+            }
+        } else {
+            return None;
+        };
+        
+        Some(FileOperation::CopyToClipboard { paths })
+    }
+    
+    pub async fn prepare_paste_from_clipboard(state: &AppState) -> Option<FileOperation> {
+        let panel = state.active_panel();
+        let destination = panel.current_dir.clone();
+        
+        Some(FileOperation::PasteFromClipboard { destination })
+    }
 
     pub async fn execute_operation(
         &mut self,
@@ -182,6 +225,62 @@ impl OperationManager {
                     
                     self.handler.execute(op, tx).await?;
                 }
+            }
+            FileOperation::DeleteToTrash { targets } => {
+                for target in targets {
+                    let op = Operation::DeleteToTrash { path: target };
+                    
+                    let (tx, mut rx) = mpsc::channel(100);
+                    let progress_tx_clone = progress_tx.clone();
+                    tokio::spawn(async move {
+                        while let Some(progress) = rx.recv().await {
+                            let _ = progress_tx_clone.send(progress);
+                        }
+                    });
+                    
+                    self.handler.execute(op, tx).await?;
+                }
+            }
+            FileOperation::RestoreFromTrash { targets } => {
+                for target in targets {
+                    let op = Operation::RestoreFromTrash { path: target };
+                    
+                    let (tx, mut rx) = mpsc::channel(100);
+                    let progress_tx_clone = progress_tx.clone();
+                    tokio::spawn(async move {
+                        while let Some(progress) = rx.recv().await {
+                            let _ = progress_tx_clone.send(progress);
+                        }
+                    });
+                    
+                    self.handler.execute(op, tx).await?;
+                }
+            }
+            FileOperation::CopyToClipboard { paths } => {
+                let op = Operation::CopyToClipboard { paths };
+                
+                let (tx, mut rx) = mpsc::channel(100);
+                let progress_tx_clone = progress_tx.clone();
+                tokio::spawn(async move {
+                    while let Some(progress) = rx.recv().await {
+                        let _ = progress_tx_clone.send(progress);
+                    }
+                });
+                
+                self.handler.execute(op, tx).await?;
+            }
+            FileOperation::PasteFromClipboard { destination } => {
+                let op = Operation::PasteFromClipboard { dst: destination };
+                
+                let (tx, mut rx) = mpsc::channel(100);
+                let progress_tx_clone = progress_tx.clone();
+                tokio::spawn(async move {
+                    while let Some(progress) = rx.recv().await {
+                        let _ = progress_tx_clone.send(progress);
+                    }
+                });
+                
+                self.handler.execute(op, tx).await?;
             }
             FileOperation::CreateDir { path } => {
                 let op = Operation::CreateDir { path };
@@ -248,6 +347,36 @@ impl OperationManager {
                 (
                     "Confirm Delete",
                     format!("Delete {} item(s)? This cannot be undone.", count)
+                )
+            }
+            FileOperation::DeleteToTrash { targets } => {
+                let count = targets.len();
+                (
+                    "Confirm Move to Trash",
+                    format!("Move {} item(s) to trash?", count)
+                )
+            }
+            FileOperation::RestoreFromTrash { targets } => {
+                let count = targets.len();
+                (
+                    "Confirm Restore",
+                    format!("Restore {} item(s) from trash?", count)
+                )
+            }
+            FileOperation::CopyToClipboard { paths } => {
+                let count = paths.len();
+                (
+                    "Copy to Clipboard",
+                    format!("Copy {} item(s) to clipboard?", count)
+                )
+            }
+            FileOperation::PasteFromClipboard { destination } => {
+                let dest_name = destination.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("?");
+                (
+                    "Paste from Clipboard",
+                    format!("Paste clipboard contents to {}?", dest_name)
                 )
             }
             FileOperation::CreateDir { path } => {

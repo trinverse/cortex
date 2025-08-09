@@ -12,7 +12,7 @@ pub enum Event {
 }
 
 pub struct EventHandler {
-    sender: mpsc::UnboundedSender<Event>,
+    _sender: mpsc::UnboundedSender<Event>,
     receiver: mpsc::UnboundedReceiver<Event>,
 }
 
@@ -44,7 +44,7 @@ impl EventHandler {
             }
         });
 
-        Self { sender, receiver }
+        Self { _sender: sender, receiver }
     }
 
     pub async fn next(&mut self) -> Result<Event> {

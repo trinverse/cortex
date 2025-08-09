@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="16" height="16" viewBox="0 0 16 16" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <!-- Cortex Symbolic Icon - for system trays and monochrome contexts -->
+  <g fill="currentColor">
+    <!-- Dual pane representation -->
+    <rect x="1" y="2" width="6" height="12" rx="0.5" fill="currentColor" fill-opacity="0.9"/>
+    <rect x="2" y="3" width="4" height="1" rx="0.5" fill="white"/>
+    <rect x="2" y="5" width="3" height="1" rx="0.5" fill="white"/>
+    <rect x="2" y="7" width="4" height="1" rx="0.5" fill="white"/>
+    <rect x="2" y="9" width="3" height="1" rx="0.5" fill="white"/>
+    <rect x="2" y="11" width="4" height="1" rx="0.5" fill="white"/>
+    
+    <rect x="9" y="2" width="6" height="12" rx="0.5" fill="currentColor" fill-opacity="0.9"/>
+    <rect x="10" y="3" width="2" height="2" rx="0.5" fill="white"/>
+    <rect x="13" y="3" width="2" height="2" rx="0.5" fill="white"/>
+    <rect x="10" y="6" width="2" height="2" rx="0.5" fill="white"/>
+    <rect x="13" y="6" width="2" height="2" rx="0.5" fill="white"/>
+    <rect x="10" y="9" width="2" height="2" rx="0.5" fill="white"/>
+    <rect x="13" y="9" width="2" height="2" rx="0.5" fill="white"/>
+    <rect x="10" y="12" width="2" height="2" rx="0.5" fill="white"/>
+  </g>
+</svg>

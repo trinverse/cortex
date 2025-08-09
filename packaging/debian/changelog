@@ -1,0 +1,11 @@
+cortex (0.1.0-1) unstable; urgency=low
+
+  * Initial release
+  * Dual-panel file manager interface
+  * Platform-specific features (trash, clipboard)
+  * Comprehensive keyboard shortcuts including Vim mode
+  * Virtual scrolling for large directories
+  * Mouse support
+  * Plugin system with Lua scripting
+
+ -- Cortex Contributors <cortex@example.com>  Sat, 09 Aug 2025 12:00:00 +0000

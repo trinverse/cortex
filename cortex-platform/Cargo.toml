@@ -1,0 +1,28 @@
+[package]
+name = "cortex-platform"
+version = "0.1.0"
+edition = "2021"
+authors = ["Cortex Contributors"]
+description = "Platform-specific functionality for Cortex file manager"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0"
+thiserror = "1.0"
+log = "0.4"
+chrono = "0.4"
+
+# Platform-specific dependencies
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["shellapi", "winuser", "shlobj", "objbase", "winnls"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.25"
+objc = "0.2"
+objc-foundation = "0.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11-clipboard = "0.9"
+
+[features]
+default = []

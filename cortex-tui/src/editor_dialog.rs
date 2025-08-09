@@ -199,7 +199,7 @@ impl EditorDialog {
         }
     }
     
-    fn apply_syntax_highlighting(&self, line: &str) -> Vec<Span> {
+    fn apply_syntax_highlighting(&self, line: &str) -> Vec<Span<'_>> {
         let mut spans = Vec::new();
         
         // Simple syntax highlighting based on file extension

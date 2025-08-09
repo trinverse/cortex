@@ -1,5 +1,5 @@
 use crate::fs::FileEntry;
-use crate::vfs::{VfsPath, VfsEntry, VirtualFileSystem, RemoteCredentials, SftpProvider};
+use crate::vfs::{VfsPath, VfsEntry, VirtualFileSystem, RemoteCredentials};
 use crate::config::ConfigManager;
 use crate::file_monitor::{FileMonitorManager, ChangeNotification, EventCallback};
 use crate::cache::{DirectoryCache, CacheConfig, CacheRefresher};
@@ -309,8 +309,12 @@ pub enum FileOperation {
     Copy { sources: Vec<PathBuf>, destination: PathBuf },
     Move { sources: Vec<PathBuf>, destination: PathBuf },
     Delete { targets: Vec<PathBuf> },
+    DeleteToTrash { targets: Vec<PathBuf> },
+    RestoreFromTrash { targets: Vec<PathBuf> },
     CreateDir { path: PathBuf },
     Rename { old_path: PathBuf, new_name: String },
+    CopyToClipboard { paths: Vec<PathBuf> },
+    PasteFromClipboard { destination: PathBuf },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -394,23 +398,17 @@ impl AppState {
     
     /// Navigate into archive or VFS path
     pub fn navigate_into_vfs(&mut self, vfs_path: VfsPath) -> Result<()> {
-        let mut vfs = VirtualFileSystem::new();
+        let vfs = VirtualFileSystem::new();
         
         // Add appropriate provider based on VFS path type
         match &vfs_path {
-            VfsPath::Sftp { host, port, username, .. } => {
-                let connection_key = format!("{}:{}@{}", username, port, host);
-                if let Some(credentials) = self.remote_connections.get(&connection_key) {
-                    let sftp_provider = SftpProvider::new(credentials.clone());
-                    vfs.add_provider(Box::new(sftp_provider));
-                }
+            VfsPath::Sftp { .. } => {
+                // SSH/FTP support temporarily disabled - requires OpenSSL
+                return Err(anyhow::anyhow!("SSH/SFTP connections are not available in this build"));
             }
-            VfsPath::Ftp { host, port, username, .. } => {
-                let connection_key = format!("{}:{}@{}", username, port, host);
-                if let Some(credentials) = self.remote_connections.get(&connection_key) {
-                    let ftp_provider = crate::vfs::FtpProvider::new(credentials.clone());
-                    vfs.add_provider(Box::new(ftp_provider));
-                }
+            VfsPath::Ftp { .. } => {
+                // SSH/FTP support temporarily disabled - requires OpenSSL
+                return Err(anyhow::anyhow!("FTP connections are not available in this build"));
             }
             _ => {}
         }
@@ -462,13 +460,14 @@ impl AppState {
     
     /// Check if we can navigate into the current selection
     pub fn can_navigate_into_current(&self) -> bool {
-        let vfs = VirtualFileSystem::new();
+        let _vfs = VirtualFileSystem::new();
         let active_panel = self.active_panel();
         
         if active_panel.is_using_vfs() {
             // In VFS mode, check VFS entry
             if let Some(vfs_entry) = active_panel.current_vfs_entry() {
-                vfs.can_navigate_into(vfs_entry)
+                // Check if it's a directory or archive
+                matches!(vfs_entry.entry_type, crate::vfs::VfsEntryType::Directory)
             } else {
                 false
             }
@@ -476,7 +475,11 @@ impl AppState {
             // In regular mode, check if it's an archive or directory
             if let Some(entry) = active_panel.current_entry() {
                 entry.file_type == crate::fs::FileType::Directory ||
-                crate::vfs::is_supported_archive(&entry.path)
+                // Simple archive detection by extension
+                entry.path.extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| matches!(ext.to_lowercase().as_str(), "zip" | "tar" | "gz" | "7z" | "rar"))
+                    .unwrap_or(false)
             } else {
                 false
             }

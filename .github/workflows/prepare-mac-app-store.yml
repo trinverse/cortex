@@ -1,0 +1,212 @@
+name: Prepare Mac App Store Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to prepare'
+        required: true
+
+jobs:
+  prepare-mac-app:
+    name: Prepare Mac App Store Package
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      
+      - name: Install Apple Developer Certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create keychain
+          security create-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+          
+          # Import certificate
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security import certificate.p12 -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+      
+      - name: Build universal binary
+        run: |
+          cargo build --release --target x86_64-apple-darwin
+          cargo build --release --target aarch64-apple-darwin
+          
+          lipo -create \
+            target/x86_64-apple-darwin/release/cortex \
+            target/aarch64-apple-darwin/release/cortex \
+            -output cortex-universal
+      
+      - name: Create App Bundle
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          
+          # Create app structure
+          mkdir -p "Cortex.app/Contents/MacOS"
+          mkdir -p "Cortex.app/Contents/Resources"
+          
+          # Copy binary
+          cp cortex-universal "Cortex.app/Contents/MacOS/Cortex"
+          chmod +x "Cortex.app/Contents/MacOS/Cortex"
+          
+          # Create Info.plist
+          cat > "Cortex.app/Contents/Info.plist" << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key>
+            <string>Cortex</string>
+            <key>CFBundleIdentifier</key>
+            <string>io.cortex-fm.cortex</string>
+            <key>CFBundleName</key>
+            <string>Cortex</string>
+            <key>CFBundleDisplayName</key>
+            <string>Cortex File Manager</string>
+            <key>CFBundleVersion</key>
+            <string>$VERSION</string>
+            <key>CFBundleShortVersionString</key>
+            <string>$VERSION</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>12.0</string>
+            <key>LSApplicationCategoryType</key>
+            <string>public.app-category.utilities</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+            <key>NSSupportsAutomaticTermination</key>
+            <false/>
+            <key>NSSupportsSuddenTermination</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+          
+          # Create entitlements
+          cat > "Cortex.entitlements" << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.security.app-sandbox</key>
+            <true/>
+            <key>com.apple.security.files.user-selected.read-write</key>
+            <true/>
+            <key>com.apple.security.files.downloads.read-write</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+      
+      - name: Code Sign
+        env:
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+        run: |
+          codesign --deep --force --verbose --sign "$APPLE_DEVELOPER_ID" \
+            --entitlements Cortex.entitlements \
+            --options runtime \
+            Cortex.app
+      
+      - name: Create PKG installer
+        env:
+          APPLE_INSTALLER_ID: ${{ secrets.APPLE_INSTALLER_ID }}
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          
+          # Build component package
+          pkgbuild --root Cortex.app \
+                   --install-location /Applications \
+                   --identifier io.cortex-fm.cortex \
+                   --version "$VERSION" \
+                   --sign "$APPLE_INSTALLER_ID" \
+                   CortexComponent.pkg
+          
+          # Create distribution XML
+          cat > distribution.xml << EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <installer-gui-script minSpecVersion="2.0">
+            <title>Cortex File Manager</title>
+            <organization>io.cortex-fm</organization>
+            <domains enable_localSystem="true"/>
+            <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
+            <pkg-ref id="io.cortex-fm.cortex">
+              <bundle-version/>
+            </pkg-ref>
+            <choices-outline>
+              <line choice="default">
+                <line choice="io.cortex-fm.cortex"/>
+              </line>
+            </choices-outline>
+            <choice id="default"/>
+            <choice id="io.cortex-fm.cortex" visible="false">
+              <pkg-ref id="io.cortex-fm.cortex"/>
+            </choice>
+            <pkg-ref id="io.cortex-fm.cortex" version="$VERSION" onConclusion="none">CortexComponent.pkg</pkg-ref>
+          </installer-gui-script>
+          EOF
+          
+          # Build product archive
+          productbuild --distribution distribution.xml \
+                       --sign "$APPLE_INSTALLER_ID" \
+                       --package-path . \
+                       "Cortex-$VERSION.pkg"
+      
+      - name: Notarize
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          
+          # Submit for notarization
+          xcrun altool --notarize-app \
+                       --primary-bundle-id "io.cortex-fm.cortex" \
+                       --username "$APPLE_ID" \
+                       --password "$APPLE_PASSWORD" \
+                       --team-id "$APPLE_TEAM_ID" \
+                       --file "Cortex-$VERSION.pkg" \
+                       --output-format json > notarization.json
+          
+          # Extract request UUID
+          REQUEST_UUID=$(cat notarization.json | jq -r '.["request-id"]')
+          
+          # Wait for notarization
+          echo "Waiting for notarization..."
+          while true; do
+            sleep 30
+            xcrun altool --notarization-info "$REQUEST_UUID" \
+                        --username "$APPLE_ID" \
+                        --password "$APPLE_PASSWORD" \
+                        --team-id "$APPLE_TEAM_ID" \
+                        --output-format json > status.json
+            
+            STATUS=$(cat status.json | jq -r '.["status"]')
+            if [ "$STATUS" = "success" ]; then
+              echo "Notarization successful!"
+              break
+            elif [ "$STATUS" = "invalid" ]; then
+              echo "Notarization failed!"
+              cat status.json
+              exit 1
+            fi
+          done
+          
+          # Staple the notarization
+          xcrun stapler staple "Cortex-$VERSION.pkg"
+      
+      - name: Upload Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-app-store-package
+          path: Cortex-*.pkg

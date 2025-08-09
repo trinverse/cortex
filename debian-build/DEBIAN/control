@@ -1,0 +1,11 @@
+Package: cortex
+Version: 0.1.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Trinverse <admin@trinverse.com>
+Homepage: https://github.com/trinverse/cortex
+Description: Modern terminal file manager
+ Cortex is a powerful, fast terminal file manager written in Rust
+ with advanced features for power users including dual-pane interface,
+ plugin system, and extensive keyboard shortcuts.

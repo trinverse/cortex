@@ -23,11 +23,17 @@ toml = { workspace = true }
 dirs = { workspace = true }
 regex = { workspace = true }
 zip = { workspace = true }
-ssh2 = { workspace = true }
+# ssh2 = { workspace = true, optional = true }  # Commented out - requires OpenSSL
 url = { workspace = true }
-suppaftp = { workspace = true }
+# suppaftp = { workspace = true, optional = true }  # Commented out - requires OpenSSL
 tar = { workspace = true }
 flate2 = { workspace = true }
 sevenz-rust = { workspace = true }
 cortex-plugins = { path = "../cortex-plugins" }
+cortex-platform = { path = "../cortex-platform" }
 crossterm = { workspace = true }
+
+# [features]
+# default = []
+# ssh = ["ssh2", "suppaftp"]
+# full = ["ssh"]
