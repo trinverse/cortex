@@ -19,3 +19,5 @@ walkdir = { workspace = true }
 notify = { workspace = true }
 humansize = { workspace = true }
 indexmap = { workspace = true }
+toml = { workspace = true }
+dirs = { workspace = true }

@@ -1,26 +1,34 @@
 #!/bin/bash
 
-# Development script with auto-rebuild using cargo-watch
-# Install cargo-watch if not present: cargo install cargo-watch
+# SIMPLEST DEVELOPMENT MODE - One command to rule them all!
+# This watches, builds, and runs Cortex automatically
 
 set -e
 
-echo "🔄 Starting Cortex development mode with auto-rebuild..."
+echo "🚀 Cortex Quick Development Mode"
+echo "================================"
 echo ""
-echo "This will watch for file changes and rebuild automatically."
-echo "The app will restart when you press Enter after seeing 'Finished'."
+echo "Making changes? This will:"
+echo "✓ Watch for file changes"
+echo "✓ Rebuild automatically (debug - fast!)"  
+echo "✓ Run Cortex immediately after build"
 echo ""
-echo "Install cargo-watch if not installed:"
-echo "  cargo install cargo-watch"
+echo "Just press Ctrl+Q in Cortex to test new changes!"
+echo "Press Ctrl+C here to stop everything"
 echo ""
-echo "Press Ctrl+C to stop."
-echo "----------------------------------------"
 
-# Check if cargo-watch is installed
+# Install cargo-watch if needed
 if ! command -v cargo-watch &> /dev/null; then
-    echo "❌ cargo-watch not found. Installing..."
+    echo "Installing cargo-watch..."
     cargo install cargo-watch
 fi
 
-# Watch and rebuild on changes
-cargo watch -x "build --release" -s "echo '✅ Build complete! Run: ./target/release/cortex'"
+# Watch, build, and run!
+cargo watch \
+    --clear \
+    --watch cortex-core \
+    --watch cortex-tui \
+    --watch cortex-cli \
+    --watch cortex-plugins \
+    --exec "build" \
+    --exec "run --bin cortex"
