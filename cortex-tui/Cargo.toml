@@ -1,0 +1,18 @@
+[package]
+name = "cortex-tui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cortex-core = { path = "../cortex-core" }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+unicode-width = { workspace = true }
+log = { workspace = true }
+humansize = { workspace = true }

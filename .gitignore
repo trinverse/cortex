@@ -1,0 +1,41 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lock for libraries
+Cargo.lock
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Debug files
+*.dSYM/
+
+# Test coverage
+*.profraw
+*.profdata
+/coverage/
+
+# Backup files
+*.orig
+*.bak
+
+# Log files
+*.log
+
+# Config files (user-specific)
+/config.toml
+
+# Plugin development
+/plugins/dev/
+
+# Distribution
+/dist/
+*.tar.gz
+*.zip
