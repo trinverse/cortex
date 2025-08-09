@@ -9,15 +9,53 @@ use tokio::sync::mpsc;
 
 pub struct OperationManager {
     handler: DefaultOperationHandler,
-    progress_sender: Option<mpsc::UnboundedSender<OperationProgress>>,
 }
 
 impl OperationManager {
     pub fn new() -> Self {
         Self {
             handler: DefaultOperationHandler,
-            progress_sender: None,
         }
+    }
+    
+    pub async fn copy_files(&mut self, sources: Vec<PathBuf>, destination: PathBuf) -> Result<()> {
+        for source in sources {
+            let op = Operation::Copy {
+                src: source.clone(),
+                dst: destination.clone(),
+            };
+            
+            // Create a channel for progress updates
+            let (tx, mut rx) = mpsc::channel(100);
+            
+            // Execute the operation
+            self.handler.execute(op, tx).await?;
+            
+            // Drain any remaining progress messages
+            while let Ok(_) = rx.try_recv() {}
+        }
+        
+        Ok(())
+    }
+    
+    pub async fn move_files(&mut self, sources: Vec<PathBuf>, destination: PathBuf) -> Result<()> {
+        for source in sources {
+            let op = Operation::Move {
+                src: source.clone(),
+                dst: destination.clone(),
+            };
+            
+            // Create a channel for progress updates
+            let (tx, mut rx) = mpsc::channel(100);
+            
+            // Execute the operation
+            self.handler.execute(op, tx).await?;
+            
+            // Drain any remaining progress messages
+            while let Ok(_) = rx.try_recv() {}
+        }
+        
+        Ok(())
     }
 
     pub async fn prepare_copy(state: &AppState) -> Option<FileOperation> {

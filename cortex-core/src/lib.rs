@@ -5,6 +5,10 @@ pub mod state;
 pub mod search;
 pub mod vfs;
 pub mod file_monitor;
+pub mod cache;
+pub mod virtual_scroll;
+pub mod shortcuts;
+pub mod memory;
 
 pub use fs::{FileEntry, FileSystem, FileType};
 pub use operations::{DefaultOperationHandler, Operation, OperationHandler, OperationProgress, OperationQueue};
@@ -14,3 +18,7 @@ pub use cortex_plugins::{PluginManager, PluginContext, PluginEvent, PluginInfo, 
 pub use search::{SearchCriteria, SearchEngine, SearchResult, SearchProgress, SearchType, SizeFilter, DateFilter};
 pub use vfs::{VirtualFileSystem, VfsPath, VfsEntry, VfsEntryType, VfsProvider, RemoteCredentials, SftpProvider, FtpProvider, is_supported_archive};
 pub use file_monitor::{FileMonitor, FileMonitorManager, FileMonitorEvent, ChangeNotification, EventCallback};
+pub use cache::{DirectoryCache, CacheConfig, CacheStatistics, CacheRefresher};
+pub use virtual_scroll::{VirtualScroller, VirtualScrollConfig, VirtualScrollManager, VirtualScrollStats};
+pub use shortcuts::{ShortcutManager, KeyBinding, Action, VimMode};
+pub use memory::{MemoryManager, StringPool, ObjectPool, CompressedFileEntry, PathTable, MemoryStats};

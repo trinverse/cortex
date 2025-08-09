@@ -30,3 +30,4 @@ tar = { workspace = true }
 flate2 = { workspace = true }
 sevenz-rust = { workspace = true }
 cortex-plugins = { path = "../cortex-plugins" }
+crossterm = { workspace = true }

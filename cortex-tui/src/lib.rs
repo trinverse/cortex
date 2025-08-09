@@ -12,6 +12,7 @@ pub mod connection_dialog;
 pub mod plugin_dialog;
 pub mod config_dialog;
 pub mod notification;
+pub mod mouse;
 
 pub use dialogs::{Dialog, ConfirmDialog, InputDialog, ProgressDialog, ErrorDialog, HelpDialog, SaveConfirmDialog, SaveChoice};
 pub use events::{Event, EventHandler, KeyBinding};
@@ -27,3 +28,4 @@ pub use connection_dialog::{ConnectionDialog, ConnectionType};
 pub use plugin_dialog::PluginDialog;
 pub use config_dialog::{ConfigDialog, ConfigTab};
 pub use notification::{Notification, NotificationManager, NotificationType};
+pub use mouse::{MouseHandler, MouseAction, Position, ContextMenu, ContextMenuAction, MouseRegion, MouseRegionType, MouseRegionManager};

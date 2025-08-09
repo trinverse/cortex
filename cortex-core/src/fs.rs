@@ -6,15 +6,16 @@ use std::fs::{self, Metadata};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum FileType {
+    #[default]
     File,
     Directory,
     Symlink,
     Other,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FileEntry {
     pub name: String,
     pub path: PathBuf,

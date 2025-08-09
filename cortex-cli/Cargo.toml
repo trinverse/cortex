@@ -24,3 +24,12 @@ serde = { workspace = true }
 clap = { version = "4.5", features = ["derive"] }
 crossterm = { workspace = true }
 ratatui = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "performance"
+harness = false
+path = "../benches/performance.rs"

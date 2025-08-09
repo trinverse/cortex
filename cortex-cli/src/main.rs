@@ -1,15 +1,15 @@
 use anyhow::Result;
 use clap::Parser;
-use cortex_core::{AppState, FileSystem, FileOperation, FileType, VfsPath, VirtualFileSystem, RemoteCredentials, SftpProvider, FtpProvider, VfsProvider, is_supported_archive, LuaPlugin, PluginEvent};
+use cortex_core::{AppState, FileSystem, FileOperation, FileType, VfsPath, VirtualFileSystem, RemoteCredentials, SftpProvider, FtpProvider, VfsProvider, is_supported_archive, LuaPlugin, PluginEvent, DirectoryCache, CacheRefresher};
 use cortex_plugins::Plugin;
-use cortex_tui::{Dialog, InputDialog, ProgressDialog, ErrorDialog, HelpDialog, SaveConfirmDialog, SaveChoice, Event, EventHandler, UI, FileViewer, ViewerDialog, TextEditor, EditorDialog, FilterDialog, CommandPaletteDialog, SearchDialog, SearchState, ConnectionDialog, ConnectionType, PluginDialog, ConfigDialog, NotificationManager, NotificationType};
+use cortex_tui::{Dialog, InputDialog, ProgressDialog, ErrorDialog, HelpDialog, SaveConfirmDialog, SaveChoice, Event, EventHandler, UI, FileViewer, ViewerDialog, TextEditor, EditorDialog, FilterDialog, CommandPaletteDialog, SearchDialog, SearchState, ConnectionDialog, ConnectionType, PluginDialog, ConfigDialog, NotificationManager, NotificationType, MouseHandler, MouseAction, Position, ContextMenu, ContextMenuAction, MouseRegion, MouseRegionType, MouseRegionManager};
 use crossterm::{
-    event::{KeyCode, KeyModifiers},
+    event::{EnableMouseCapture, DisableMouseCapture, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::{io, path::PathBuf, time::Duration};
+use std::{io, path::PathBuf, time::Duration, sync::Arc};
 use tokio::sync::mpsc;
 
 mod command;
@@ -56,13 +56,16 @@ struct App {
     file_change_rx: Option<mpsc::UnboundedReceiver<()>>,
     file_event_rx: Option<mpsc::UnboundedReceiver<cortex_core::FileMonitorEvent>>,
     notification_manager: NotificationManager,
+    mouse_handler: MouseHandler,
+    context_menu: Option<ContextMenu>,
+    mouse_regions: MouseRegionManager,
 }
 
 impl App {
     async fn new(initial_path: Option<PathBuf>) -> Result<Self> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
         
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
@@ -76,8 +79,8 @@ impl App {
             }
         }
         
-        Self::refresh_panel(&mut state.left_panel)?;
-        Self::refresh_panel(&mut state.right_panel)?;
+        Self::refresh_panel_with_cache(&mut state.left_panel, &state.directory_cache)?;
+        Self::refresh_panel_with_cache(&mut state.right_panel, &state.directory_cache)?;
         
         // Apply initial configuration
         Self::apply_configuration(&mut state);
@@ -98,6 +101,11 @@ impl App {
             eprintln!("Warning: Failed to initialize file monitor: {}", e);
         }
         
+        // Start cache refresher
+        let cache_refresher = Arc::new(CacheRefresher::new(state.directory_cache.clone()));
+        cache_refresher.start().await;
+        state.cache_refresher = Some(cache_refresher.clone());
+        
         let events = EventHandler::new(Duration::from_millis(100));
         
         Ok(Self {
@@ -113,6 +121,9 @@ impl App {
             file_change_rx: Some(file_change_rx),
             file_event_rx: Some(file_event_rx),
             notification_manager: NotificationManager::new(),
+            mouse_handler: MouseHandler::new(),
+            context_menu: None,
+            mouse_regions: MouseRegionManager::new(),
         })
     }
 
@@ -169,7 +180,9 @@ impl App {
             
             match self.events.next().await? {
                 Event::Key(key_event) => {
-                    if self.dialog.is_some() {
+                    if self.context_menu.is_some() {
+                        self.handle_context_menu_input(key_event).await?;
+                    } else if self.dialog.is_some() {
                         if !self.handle_dialog_input(key_event).await? {
                             break;
                         }
@@ -180,16 +193,19 @@ impl App {
                         }
                     }
                 }
+                Event::Mouse(mouse_event) => {
+                    self.handle_mouse_event(mouse_event).await?;
+                }
                 Event::Resize(_, _) => {
                     self.terminal.autoresize()?;
                 }
                 Event::Tick => {
                     // Check if panels need refreshing due to file system changes
                     if self.refresh_needed && self.state.is_file_monitoring_active() {
-                        if let Err(e) = Self::refresh_panel(&mut self.state.left_panel) {
+                        if let Err(e) = Self::refresh_panel_with_cache(&mut self.state.left_panel, &self.state.directory_cache) {
                             log::warn!("Failed to refresh left panel: {}", e);
                         }
-                        if let Err(e) = Self::refresh_panel(&mut self.state.right_panel) {
+                        if let Err(e) = Self::refresh_panel_with_cache(&mut self.state.right_panel, &self.state.directory_cache) {
                             log::warn!("Failed to refresh right panel: {}", e);
                         }
                         self.refresh_needed = false;
@@ -1440,8 +1456,8 @@ impl App {
                                 ));
                             } else {
                                 Self::apply_configuration(&mut self.state);
-                                Self::refresh_panel(&mut self.state.left_panel).ok();
-                                Self::refresh_panel(&mut self.state.right_panel).ok();
+                                Self::refresh_panel_with_cache(&mut self.state.left_panel, &self.state.directory_cache).ok();
+                                Self::refresh_panel_with_cache(&mut self.state.right_panel, &self.state.directory_cache).ok();
                                 self.state.set_status_message("Configuration saved and applied");
                             }
                         }
@@ -1658,6 +1674,33 @@ impl App {
         
         Ok(())
     }
+    
+    fn refresh_panel_with_cache(panel: &mut cortex_core::PanelState, cache: &DirectoryCache) -> Result<()> {
+        // Try to get from cache first
+        let entries = if let Some(cached_entries) = cache.get(&panel.current_dir) {
+            log::debug!("Cache hit for directory: {:?}", panel.current_dir);
+            cached_entries
+        } else {
+            log::debug!("Cache miss for directory: {:?}", panel.current_dir);
+            let fresh_entries = FileSystem::list_directory(&panel.current_dir, panel.show_hidden)?;
+            
+            // Store in cache for future use
+            if let Err(e) = cache.put(&panel.current_dir, fresh_entries.clone()) {
+                log::warn!("Failed to cache directory entries: {}", e);
+            }
+            
+            fresh_entries
+        };
+        
+        panel.entries = entries;
+        panel.sort_entries();
+        
+        if panel.selected_index >= panel.entries.len() && !panel.entries.is_empty() {
+            panel.selected_index = panel.entries.len() - 1;
+        }
+        
+        Ok(())
+    }
 
     async fn load_plugins(state: &mut AppState) -> Result<()> {
         let plugin_dir = std::env::current_dir()?.join("plugins");
@@ -1819,6 +1862,329 @@ impl App {
                 config.general.show_hidden, config.panels.default_sort);
     }
 
+    async fn handle_mouse_event(&mut self, mouse_event: crossterm::event::MouseEvent) -> Result<()> {
+        if let Some(action) = self.mouse_handler.process_event(mouse_event) {
+            match action {
+                MouseAction::Click(pos) => {
+                    self.handle_mouse_click(pos).await?;
+                }
+                MouseAction::DoubleClick(pos) => {
+                    self.handle_mouse_double_click(pos).await?;
+                }
+                MouseAction::RightClick(pos) => {
+                    self.handle_mouse_right_click(pos).await?;
+                }
+                MouseAction::ScrollUp(pos) => {
+                    self.handle_mouse_scroll_up(pos).await?;
+                }
+                MouseAction::ScrollDown(pos) => {
+                    self.handle_mouse_scroll_down(pos).await?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    
+    async fn handle_mouse_click(&mut self, pos: Position) -> Result<()> {
+        // Close context menu if open
+        if self.context_menu.is_some() {
+            self.context_menu = None;
+            return Ok(());
+        }
+        
+        // Determine which panel was clicked
+        let terminal_size = self.terminal.size()?;
+        let panel_width = terminal_size.width / 2;
+        
+        if pos.x < panel_width {
+            // Left panel clicked
+            self.state.active_panel = cortex_core::ActivePanel::Left;
+            
+            // Calculate which file was clicked (accounting for panel offset)
+            if pos.y >= 2 && pos.y < terminal_size.height - 3 {
+                let file_index = (pos.y - 2) as usize + self.state.left_panel.view_offset;
+                if file_index < self.state.left_panel.entries.len() {
+                    self.state.left_panel.selected_index = file_index;
+                }
+            }
+        } else {
+            // Right panel clicked
+            self.state.active_panel = cortex_core::ActivePanel::Right;
+            
+            // Calculate which file was clicked
+            if pos.y >= 2 && pos.y < terminal_size.height - 3 {
+                let file_index = (pos.y - 2) as usize + self.state.right_panel.view_offset;
+                if file_index < self.state.right_panel.entries.len() {
+                    self.state.right_panel.selected_index = file_index;
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    async fn handle_mouse_double_click(&mut self, pos: Position) -> Result<()> {
+        // First handle as a click to select the item
+        self.handle_mouse_click(pos).await?;
+        
+        // Then open/enter the selected item
+        let panel = self.state.active_panel_mut();
+        if let Some(entry) = panel.current_entry() {
+            if entry.file_type == FileType::Directory {
+                let path = entry.path.clone();
+                self.navigate_to_directory(path).await?;
+            } else {
+                // View the file
+                let path = entry.path.clone();
+                if let Ok(mut viewer) = FileViewer::new(&path) {
+                    if viewer.load_content(100).is_ok() {
+                        self.dialog = Some(Dialog::Viewer(ViewerDialog::new(viewer)));
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    async fn handle_mouse_right_click(&mut self, pos: Position) -> Result<()> {
+        // Close existing context menu if any
+        self.context_menu = None;
+        
+        // Determine which panel was clicked
+        let terminal_size = self.terminal.size()?;
+        let panel_width = terminal_size.width / 2;
+        
+        let has_selection = if pos.x < panel_width {
+            self.state.active_panel = cortex_core::ActivePanel::Left;
+            !self.state.left_panel.marked_files.is_empty()
+        } else {
+            self.state.active_panel = cortex_core::ActivePanel::Right;
+            !self.state.right_panel.marked_files.is_empty()
+        };
+        
+        // Check if clicked on a file or empty space
+        let clicked_on_file = if pos.y >= 2 && pos.y < terminal_size.height - 3 {
+            let panel = self.state.active_panel();
+            let file_index = (pos.y - 2) as usize + panel.view_offset;
+            file_index < panel.entries.len()
+        } else {
+            false
+        };
+        
+        // Create appropriate context menu
+        if clicked_on_file {
+            self.context_menu = Some(ContextMenu::file_menu(pos, has_selection));
+        } else {
+            self.context_menu = Some(ContextMenu::panel_menu(pos));
+        }
+        
+        Ok(())
+    }
+    
+    async fn handle_mouse_scroll_up(&mut self, pos: Position) -> Result<()> {
+        // Determine which panel to scroll
+        let terminal_size = self.terminal.size()?;
+        let panel_width = terminal_size.width / 2;
+        
+        let panel = if pos.x < panel_width {
+            &mut self.state.left_panel
+        } else {
+            &mut self.state.right_panel
+        };
+        
+        // Scroll up by 3 lines
+        for _ in 0..3 {
+            panel.move_selection_up();
+        }
+        panel.update_view_offset(terminal_size.height as usize - 5);
+        
+        Ok(())
+    }
+    
+    async fn handle_mouse_scroll_down(&mut self, pos: Position) -> Result<()> {
+        // Determine which panel to scroll
+        let terminal_size = self.terminal.size()?;
+        let panel_width = terminal_size.width / 2;
+        
+        let panel = if pos.x < panel_width {
+            &mut self.state.left_panel
+        } else {
+            &mut self.state.right_panel
+        };
+        
+        // Scroll down by 3 lines
+        for _ in 0..3 {
+            panel.move_selection_down();
+        }
+        panel.update_view_offset(terminal_size.height as usize - 5);
+        
+        Ok(())
+    }
+    
+    async fn handle_context_menu_input(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
+        if let Some(ref mut menu) = self.context_menu {
+            match key.code {
+                KeyCode::Up => menu.move_up(),
+                KeyCode::Down => menu.move_down(),
+                KeyCode::Enter => {
+                    if let Some(action) = menu.get_selected_action() {
+                        self.execute_context_menu_action(action).await?;
+                    }
+                    self.context_menu = None;
+                }
+                KeyCode::Esc => {
+                    self.context_menu = None;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    
+    async fn execute_context_menu_action(&mut self, action: ContextMenuAction) -> Result<()> {
+        match action {
+            ContextMenuAction::Copy => {
+                // Prepare copy operation (F5 functionality)
+                let sources = self.get_selected_files();
+                if !sources.is_empty() {
+                    let destination = self.state.inactive_panel().current_dir.clone();
+                    self.state.pending_operation = Some(FileOperation::Copy {
+                        sources: sources.clone(),
+                        destination: destination.clone(),
+                    });
+                    self.state.set_status_message(format!("Ready to copy {} file(s)", sources.len()));
+                }
+            }
+            ContextMenuAction::Cut => {
+                // Prepare move operation
+                let sources = self.get_selected_files();
+                if !sources.is_empty() {
+                    let destination = self.state.inactive_panel().current_dir.clone();
+                    self.state.pending_operation = Some(FileOperation::Move {
+                        sources: sources.clone(),
+                        destination: destination.clone(),
+                    });
+                    self.state.set_status_message(format!("Ready to move {} file(s)", sources.len()));
+                }
+            }
+            ContextMenuAction::Paste => {
+                // Execute pending operation
+                if let Some(ref op) = self.state.pending_operation.clone() {
+                    match op {
+                        FileOperation::Copy { sources, .. } => {
+                            let destination = self.state.active_panel().current_dir.clone();
+                            self.operation_manager.copy_files(sources.clone(), destination).await?;
+                        }
+                        FileOperation::Move { sources, .. } => {
+                            let destination = self.state.active_panel().current_dir.clone();
+                            self.operation_manager.move_files(sources.clone(), destination).await?;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            ContextMenuAction::Delete => {
+                // Delete operation (F8 functionality)
+                let targets = self.get_selected_files();
+                if !targets.is_empty() {
+                    self.dialog = Some(Dialog::Confirm(
+                        cortex_tui::dialogs::ConfirmDialog::new(
+                            "Delete Files",
+                            format!("Delete {} file(s)?", targets.len())
+                        )
+                    ));
+                    self.state.pending_operation = Some(FileOperation::Delete { targets });
+                }
+            }
+            ContextMenuAction::Rename => {
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    self.dialog = Some(Dialog::Input(
+                        InputDialog::new(
+                            "Rename",
+                            "Enter new name:"
+                        ).with_value(&entry.name)
+                    ));
+                    self.state.pending_operation = Some(FileOperation::Rename {
+                        old_path: entry.path.clone(),
+                        new_name: entry.name.clone(),
+                    });
+                }
+            }
+            ContextMenuAction::NewFile => {
+                self.dialog = Some(Dialog::Input(
+                    InputDialog::new("New File", "Enter file name:")
+                ));
+            }
+            ContextMenuAction::NewFolder => {
+                self.dialog = Some(Dialog::Input(
+                    InputDialog::new("New Directory", "Enter directory name:")
+                ));
+            }
+            ContextMenuAction::ViewFile => {
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if let Ok(mut viewer) = FileViewer::new(&entry.path) {
+                        if viewer.load_content(100).is_ok() {
+                            self.dialog = Some(Dialog::Viewer(ViewerDialog::new(viewer)));
+                        }
+                    }
+                }
+            }
+            ContextMenuAction::EditFile => {
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if let Ok(editor) = TextEditor::new(&entry.path) {
+                        self.dialog = Some(Dialog::Editor(EditorDialog::new(editor)));
+                    }
+                }
+            }
+            ContextMenuAction::Refresh => {
+                let left_dir = self.state.left_panel.current_dir.clone();
+                let right_dir = self.state.right_panel.current_dir.clone();
+                self.state.directory_cache.invalidate(&left_dir);
+                self.state.directory_cache.invalidate(&right_dir);
+                
+                Self::refresh_panel_with_cache(&mut self.state.left_panel, &self.state.directory_cache)?;
+                Self::refresh_panel_with_cache(&mut self.state.right_panel, &self.state.directory_cache)?;
+            }
+            ContextMenuAction::SelectAll => {
+                let panel = self.state.active_panel_mut();
+                for entry in &panel.entries {
+                    if entry.name != ".." {
+                        panel.marked_files.push(entry.path.clone());
+                    }
+                }
+            }
+            ContextMenuAction::InvertSelection => {
+                let panel = self.state.active_panel_mut();
+                let mut new_marks = Vec::new();
+                for entry in &panel.entries {
+                    if entry.name != ".." && !panel.marked_files.contains(&entry.path) {
+                        new_marks.push(entry.path.clone());
+                    }
+                }
+                panel.marked_files = new_marks;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn get_selected_files(&self) -> Vec<PathBuf> {
+        let panel = self.state.active_panel();
+        if !panel.marked_files.is_empty() {
+            panel.marked_files.clone()
+        } else if let Some(entry) = panel.current_entry() {
+            if entry.name != ".." {
+                vec![entry.path.clone()]
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        }
+    }
+
     async fn cleanup_and_exit(&mut self) -> Result<()> {
         // Stop file monitoring if active
         if let Some(ref monitor) = self.state.file_monitor {
@@ -1829,7 +2195,7 @@ impl App {
         
         // Cleanup terminal
         disable_raw_mode()?;
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+        execute!(self.terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
         
         // Force exit all spawned tasks by terminating the process
         // This ensures no background tasks keep running
@@ -1840,6 +2206,6 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture);
     }
 }

@@ -1,11 +1,12 @@
 use anyhow::Result;
-use crossterm::event::{self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub enum Event {
     Key(KeyEvent),
+    Mouse(MouseEvent),
     Resize(u16, u16),
     Tick,
 }
@@ -27,6 +28,9 @@ impl EventHandler {
                         match event {
                             CrosstermEvent::Key(key) => {
                                 let _ = sender_clone.send(Event::Key(key));
+                            }
+                            CrosstermEvent::Mouse(mouse) => {
+                                let _ = sender_clone.send(Event::Mouse(mouse));
                             }
                             CrosstermEvent::Resize(width, height) => {
                                 let _ = sender_clone.send(Event::Resize(width, height));

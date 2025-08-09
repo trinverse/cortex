@@ -1,12 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use std::io::{Read, Write};
+use std::io::Read;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use ssh2::{Session, Sftp};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
-use url::Url;
 
 /// Virtual File System - abstraction over regular files and archive contents
 pub struct VirtualFileSystem {

@@ -2,6 +2,7 @@ use crate::fs::FileEntry;
 use crate::vfs::{VfsPath, VfsEntry, VirtualFileSystem, RemoteCredentials, SftpProvider};
 use crate::config::ConfigManager;
 use crate::file_monitor::{FileMonitorManager, ChangeNotification, EventCallback};
+use crate::cache::{DirectoryCache, CacheConfig, CacheRefresher};
 use cortex_plugins::{PluginManager, PluginContext};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -299,6 +300,8 @@ pub struct AppState {
     pub config_manager: ConfigManager,
     pub file_monitor: Option<Arc<FileMonitorManager>>,
     pub auto_reload_enabled: bool,
+    pub directory_cache: Arc<DirectoryCache>,
+    pub cache_refresher: Option<Arc<CacheRefresher>>,
 }
 
 #[derive(Debug, Clone)]
@@ -322,6 +325,16 @@ impl AppState {
         let config_manager = ConfigManager::new()?;
         let auto_reload_enabled = config_manager.get().general.auto_reload;
         
+        // Initialize directory cache with configuration
+        let cache_config = CacheConfig {
+            max_entries: 1000,
+            ttl: std::time::Duration::from_secs(300),
+            max_memory_bytes: 100 * 1024 * 1024, // 100MB
+            enable_background_refresh: true,
+            frequent_access_threshold: 5,
+        };
+        let directory_cache = Arc::new(DirectoryCache::with_config(cache_config));
+        
         Ok(Self {
             left_panel: PanelState::new(current_dir.clone()),
             right_panel: PanelState::new(current_dir),
@@ -338,6 +351,8 @@ impl AppState {
             config_manager,
             file_monitor: None,
             auto_reload_enabled,
+            directory_cache,
+            cache_refresher: None,
         })
     }
 
