@@ -1,13 +1,18 @@
 use anyhow::Result;
 use clap::Parser;
-use cortex_core::{AppState, FileSystem};
-use cortex_tui::{Event, EventHandler, KeyBinding, UI};
+use cortex_core::{AppState, FileSystem, FileOperation};
+use cortex_tui::{Dialog, InputDialog, ProgressDialog, ErrorDialog, HelpDialog, Event, EventHandler, KeyBinding, UI};
 use crossterm::{
+    event::KeyCode,
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{io, path::PathBuf, time::Duration};
+use tokio::sync::mpsc;
+
+mod operations;
+use operations::OperationManager;
 
 #[derive(Parser, Debug)]
 #[command(name = "cortex")]
@@ -39,6 +44,9 @@ struct App {
     state: AppState,
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     events: EventHandler,
+    dialog: Option<Dialog>,
+    operation_manager: OperationManager,
+    operation_rx: Option<mpsc::UnboundedReceiver<cortex_core::OperationProgress>>,
 }
 
 impl App {
@@ -68,16 +76,34 @@ impl App {
             state,
             terminal,
             events,
+            dialog: None,
+            operation_manager: OperationManager::new(),
+            operation_rx: None,
         })
     }
 
     async fn run(&mut self) -> Result<()> {
         loop {
-            self.terminal.draw(|frame| UI::draw(frame, &self.state))?;
+            self.terminal.draw(|frame| {
+                UI::draw(frame, &self.state);
+                if let Some(dialog) = &self.dialog {
+                    cortex_tui::dialogs::render_dialog(frame, dialog);
+                }
+            })?;
+            
+            if let Some(rx) = &mut self.operation_rx {
+                if let Ok(progress) = rx.try_recv() {
+                    self.handle_operation_progress(progress);
+                }
+            }
             
             match self.events.next().await? {
                 Event::Key(key_event) => {
-                    if let Some(binding) = KeyBinding::from_key_event(key_event) {
+                    if self.dialog.is_some() {
+                        if !self.handle_dialog_input(key_event).await? {
+                            break;
+                        }
+                    } else if let Some(binding) = KeyBinding::from_key_event(key_event) {
                         if !self.handle_input(binding).await? {
                             break;
                         }
@@ -93,11 +119,106 @@ impl App {
         Ok(())
     }
 
+    async fn handle_dialog_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        match &mut self.dialog {
+            Some(Dialog::Confirm(dialog)) => {
+                match key.code {
+                    KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
+                        dialog.toggle_selection();
+                    }
+                    KeyCode::Enter => {
+                        if dialog.selected {
+                            if let Some(operation) = self.state.pending_operation.take() {
+                                self.execute_operation(operation).await?;
+                            }
+                        }
+                        self.dialog = None;
+                        self.state.pending_operation = None;
+                    }
+                    KeyCode::Esc => {
+                        self.dialog = None;
+                        self.state.pending_operation = None;
+                    }
+                    _ => {}
+                }
+            }
+            Some(Dialog::Input(dialog)) => {
+                match key.code {
+                    KeyCode::Char(c) => {
+                        dialog.insert_char(c);
+                    }
+                    KeyCode::Backspace => {
+                        dialog.delete_char();
+                    }
+                    KeyCode::Left => {
+                        dialog.move_cursor_left();
+                    }
+                    KeyCode::Right => {
+                        dialog.move_cursor_right();
+                    }
+                    KeyCode::Enter => {
+                        if let Some(FileOperation::CreateDir { .. }) = &self.state.pending_operation {
+                            let path = self.state.active_panel().current_dir.join(&dialog.value);
+                            self.state.pending_operation = Some(FileOperation::CreateDir { path });
+                            
+                            if let Some(operation) = self.state.pending_operation.take() {
+                                self.execute_operation(operation).await?;
+                            }
+                        } else if let Some(FileOperation::Rename { old_path, .. }) = &self.state.pending_operation {
+                            self.state.pending_operation = Some(FileOperation::Rename {
+                                old_path: old_path.clone(),
+                                new_name: dialog.value.clone(),
+                            });
+                            
+                            if let Some(operation) = self.state.pending_operation.take() {
+                                self.execute_operation(operation).await?;
+                            }
+                        }
+                        self.dialog = None;
+                    }
+                    KeyCode::Esc => {
+                        self.dialog = None;
+                        self.state.pending_operation = None;
+                    }
+                    _ => {}
+                }
+            }
+            Some(Dialog::Progress(_)) => {
+                if key.code == KeyCode::Esc {
+                    self.dialog = None;
+                    self.operation_rx = None;
+                }
+            }
+            Some(Dialog::Error(_)) => {
+                if key.code == KeyCode::Enter || key.code == KeyCode::Esc {
+                    self.dialog = None;
+                }
+            }
+            Some(Dialog::Help(dialog)) => {
+                match key.code {
+                    KeyCode::Up => dialog.scroll_up(),
+                    KeyCode::Down => dialog.scroll_down(),
+                    KeyCode::Esc | KeyCode::F(1) => {
+                        self.dialog = None;
+                    }
+                    _ => {}
+                }
+            }
+            None => {}
+        }
+        
+        Ok(true)
+    }
+
     async fn handle_input(&mut self, binding: KeyBinding) -> Result<bool> {
         use cortex_core::FileType;
         
         match binding {
             KeyBinding::Quit => return Ok(false),
+            
+            KeyBinding::Help => {
+                self.dialog = Some(Dialog::Help(HelpDialog::new()));
+            }
             
             KeyBinding::Up => {
                 let panel = self.state.active_panel_mut();
@@ -171,6 +292,51 @@ impl App {
                 self.state.toggle_panel();
             }
             
+            KeyBinding::Copy => {
+                if let Some(operation) = OperationManager::prepare_copy(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            
+            KeyBinding::Move => {
+                if let Some(operation) = OperationManager::prepare_move(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            
+            KeyBinding::Delete => {
+                if let Some(operation) = OperationManager::prepare_delete(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            
+            KeyBinding::MakeDir => {
+                self.dialog = Some(Dialog::Input(
+                    InputDialog::new("Create Directory", "Enter directory name:")
+                ));
+                self.state.pending_operation = Some(FileOperation::CreateDir {
+                    path: PathBuf::new(),
+                });
+            }
+            
+            KeyBinding::Rename => {
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if entry.name != ".." {
+                        self.dialog = Some(Dialog::Input(
+                            InputDialog::new("Rename", "Enter new name:")
+                                .with_value(&entry.name)
+                        ));
+                        self.state.pending_operation = Some(FileOperation::Rename {
+                            old_path: entry.path.clone(),
+                            new_name: entry.name.clone(),
+                        });
+                    }
+                }
+            }
+            
             KeyBinding::ToggleHidden => {
                 let panel = self.state.active_panel_mut();
                 panel.show_hidden = !panel.show_hidden;
@@ -182,6 +348,20 @@ impl App {
                 panel.toggle_mark_current();
                 panel.move_selection_down();
                 panel.update_view_offset(self.terminal.size()?.height as usize - 5);
+            }
+            
+            KeyBinding::MarkAll => {
+                let panel = self.state.active_panel_mut();
+                for entry in &panel.entries {
+                    if entry.name != ".." {
+                        panel.marked_files.push(entry.path.clone());
+                    }
+                }
+            }
+            
+            KeyBinding::UnmarkAll => {
+                let panel = self.state.active_panel_mut();
+                panel.clear_marks();
             }
             
             KeyBinding::Refresh => {
@@ -197,6 +377,65 @@ impl App {
         }
         
         Ok(true)
+    }
+
+    async fn execute_operation(&mut self, operation: FileOperation) -> Result<()> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.operation_rx = Some(rx);
+        
+        let title = match &operation {
+            FileOperation::Copy { .. } => "Copying Files",
+            FileOperation::Move { .. } => "Moving Files",
+            FileOperation::Delete { .. } => "Deleting Files",
+            FileOperation::CreateDir { .. } => "Creating Directory",
+            FileOperation::Rename { .. } => "Renaming",
+        };
+        
+        self.dialog = Some(Dialog::Progress(
+            ProgressDialog::new(title, "Processing...")
+        ));
+        
+        let result = self.operation_manager.execute_operation(operation, tx).await;
+        
+        if let Err(e) = result {
+            self.dialog = Some(Dialog::Error(
+                ErrorDialog::new(format!("Operation failed: {}", e))
+            ));
+        } else {
+            self.dialog = None;
+            Self::refresh_panel(self.state.active_panel_mut())?;
+            let inactive = match self.state.active_panel {
+                cortex_core::ActivePanel::Left => &mut self.state.right_panel,
+                cortex_core::ActivePanel::Right => &mut self.state.left_panel,
+            };
+            Self::refresh_panel(inactive)?;
+            self.state.active_panel_mut().clear_marks();
+        }
+        
+        self.operation_rx = None;
+        Ok(())
+    }
+
+    fn handle_operation_progress(&mut self, progress: cortex_core::OperationProgress) {
+        if let Some(Dialog::Progress(ref mut dialog)) = self.dialog {
+            match progress {
+                cortex_core::OperationProgress::Started { operation } => {
+                    dialog.operation = operation;
+                }
+                cortex_core::OperationProgress::Progress { current, total, message } => {
+                    dialog.update(current, total, message);
+                }
+                cortex_core::OperationProgress::Completed { .. } => {
+                    dialog.message = "Operation completed".to_string();
+                }
+                cortex_core::OperationProgress::Failed { operation, error } => {
+                    self.dialog = Some(Dialog::Error(
+                        ErrorDialog::new(format!("Failed: {}", error))
+                            .with_details(operation)
+                    ));
+                }
+            }
+        }
     }
 
     fn refresh_panel(panel: &mut cortex_core::PanelState) -> Result<()> {

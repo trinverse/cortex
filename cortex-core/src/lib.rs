@@ -3,5 +3,5 @@ pub mod operations;
 pub mod state;
 
 pub use fs::{FileEntry, FileSystem, FileType};
-pub use operations::{Operation, OperationHandler, OperationProgress, OperationQueue};
-pub use state::{ActivePanel, AppState, PanelState, SortMode};
+pub use operations::{DefaultOperationHandler, Operation, OperationHandler, OperationProgress, OperationQueue};
+pub use state::{ActivePanel, AppState, FileOperation, PanelState, SortMode};

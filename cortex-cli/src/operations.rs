@@ -1,0 +1,237 @@
+use anyhow::Result;
+use cortex_core::{
+    AppState, FileOperation, Operation, OperationHandler,
+    OperationProgress, DefaultOperationHandler
+};
+use cortex_tui::{Dialog, ConfirmDialog};
+use std::path::PathBuf;
+use tokio::sync::mpsc;
+
+pub struct OperationManager {
+    handler: DefaultOperationHandler,
+    progress_sender: Option<mpsc::UnboundedSender<OperationProgress>>,
+}
+
+impl OperationManager {
+    pub fn new() -> Self {
+        Self {
+            handler: DefaultOperationHandler,
+            progress_sender: None,
+        }
+    }
+
+    pub async fn prepare_copy(state: &AppState) -> Option<FileOperation> {
+        let source_panel = state.active_panel();
+        let dest_panel = state.inactive_panel();
+        
+        let sources = if !source_panel.marked_files.is_empty() {
+            source_panel.marked_files.clone()
+        } else if let Some(entry) = source_panel.current_entry() {
+            if entry.name != ".." {
+                vec![entry.path.clone()]
+            } else {
+                return None;
+            }
+        } else {
+            return None;
+        };
+        
+        Some(FileOperation::Copy {
+            sources,
+            destination: dest_panel.current_dir.clone(),
+        })
+    }
+
+    pub async fn prepare_move(state: &AppState) -> Option<FileOperation> {
+        let source_panel = state.active_panel();
+        let dest_panel = state.inactive_panel();
+        
+        let sources = if !source_panel.marked_files.is_empty() {
+            source_panel.marked_files.clone()
+        } else if let Some(entry) = source_panel.current_entry() {
+            if entry.name != ".." {
+                vec![entry.path.clone()]
+            } else {
+                return None;
+            }
+        } else {
+            return None;
+        };
+        
+        Some(FileOperation::Move {
+            sources,
+            destination: dest_panel.current_dir.clone(),
+        })
+    }
+
+    pub async fn prepare_delete(state: &AppState) -> Option<FileOperation> {
+        let panel = state.active_panel();
+        
+        let targets = if !panel.marked_files.is_empty() {
+            panel.marked_files.clone()
+        } else if let Some(entry) = panel.current_entry() {
+            if entry.name != ".." {
+                vec![entry.path.clone()]
+            } else {
+                return None;
+            }
+        } else {
+            return None;
+        };
+        
+        Some(FileOperation::Delete { targets })
+    }
+
+    pub async fn execute_operation(
+        &mut self,
+        operation: FileOperation,
+        progress_tx: mpsc::UnboundedSender<OperationProgress>,
+    ) -> Result<()> {
+        match operation {
+            FileOperation::Copy { sources, destination } => {
+                for source in sources {
+                    let dest_path = destination.join(
+                        source.file_name().unwrap_or_default()
+                    );
+                    let op = Operation::Copy {
+                        src: source,
+                        dst: dest_path,
+                    };
+                    
+                    let (tx, mut rx) = mpsc::channel(100);
+                    let progress_tx_clone = progress_tx.clone();
+                    tokio::spawn(async move {
+                        while let Some(progress) = rx.recv().await {
+                            let _ = progress_tx_clone.send(progress);
+                        }
+                    });
+                    
+                    self.handler.execute(op, tx).await?;
+                }
+            }
+            FileOperation::Move { sources, destination } => {
+                for source in sources {
+                    let dest_path = destination.join(
+                        source.file_name().unwrap_or_default()
+                    );
+                    let op = Operation::Move {
+                        src: source,
+                        dst: dest_path,
+                    };
+                    
+                    let (tx, mut rx) = mpsc::channel(100);
+                    let progress_tx_clone = progress_tx.clone();
+                    tokio::spawn(async move {
+                        while let Some(progress) = rx.recv().await {
+                            let _ = progress_tx_clone.send(progress);
+                        }
+                    });
+                    
+                    self.handler.execute(op, tx).await?;
+                }
+            }
+            FileOperation::Delete { targets } => {
+                for target in targets {
+                    let op = Operation::Delete { path: target };
+                    
+                    let (tx, mut rx) = mpsc::channel(100);
+                    let progress_tx_clone = progress_tx.clone();
+                    tokio::spawn(async move {
+                        while let Some(progress) = rx.recv().await {
+                            let _ = progress_tx_clone.send(progress);
+                        }
+                    });
+                    
+                    self.handler.execute(op, tx).await?;
+                }
+            }
+            FileOperation::CreateDir { path } => {
+                let op = Operation::CreateDir { path };
+                
+                let (tx, mut rx) = mpsc::channel(100);
+                let progress_tx_clone = progress_tx.clone();
+                tokio::spawn(async move {
+                    while let Some(progress) = rx.recv().await {
+                        let _ = progress_tx_clone.send(progress);
+                    }
+                });
+                
+                self.handler.execute(op, tx).await?;
+            }
+            FileOperation::Rename { old_path, new_name } => {
+                let new_path = old_path.parent()
+                    .map(|p| p.join(&new_name))
+                    .unwrap_or_else(|| PathBuf::from(&new_name));
+                    
+                let op = Operation::Rename {
+                    old: old_path,
+                    new: new_path,
+                };
+                
+                let (tx, mut rx) = mpsc::channel(100);
+                let progress_tx_clone = progress_tx.clone();
+                tokio::spawn(async move {
+                    while let Some(progress) = rx.recv().await {
+                        let _ = progress_tx_clone.send(progress);
+                    }
+                });
+                
+                self.handler.execute(op, tx).await?;
+            }
+        }
+        
+        Ok(())
+    }
+
+    pub fn create_confirm_dialog(operation: &FileOperation) -> Dialog {
+        let (title, message) = match operation {
+            FileOperation::Copy { sources, destination } => {
+                let count = sources.len();
+                let dest_name = destination.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("?");
+                (
+                    "Confirm Copy",
+                    format!("Copy {} item(s) to {}?", count, dest_name)
+                )
+            }
+            FileOperation::Move { sources, destination } => {
+                let count = sources.len();
+                let dest_name = destination.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("?");
+                (
+                    "Confirm Move",
+                    format!("Move {} item(s) to {}?", count, dest_name)
+                )
+            }
+            FileOperation::Delete { targets } => {
+                let count = targets.len();
+                (
+                    "Confirm Delete",
+                    format!("Delete {} item(s)? This cannot be undone.", count)
+                )
+            }
+            FileOperation::CreateDir { path } => {
+                let name = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("?");
+                (
+                    "Create Directory",
+                    format!("Create directory '{}'?", name)
+                )
+            }
+            FileOperation::Rename { old_path, new_name } => {
+                let old_name = old_path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("?");
+                (
+                    "Rename",
+                    format!("Rename '{}' to '{}'?", old_name, new_name)
+                )
+            }
+        };
+        
+        Dialog::Confirm(ConfirmDialog::new(title, message))
+    }
+}

@@ -138,6 +138,16 @@ pub struct AppState {
     pub command_line: String,
     pub status_message: Option<String>,
     pub show_help: bool,
+    pub pending_operation: Option<FileOperation>,
+}
+
+#[derive(Debug, Clone)]
+pub enum FileOperation {
+    Copy { sources: Vec<PathBuf>, destination: PathBuf },
+    Move { sources: Vec<PathBuf>, destination: PathBuf },
+    Delete { targets: Vec<PathBuf> },
+    CreateDir { path: PathBuf },
+    Rename { old_path: PathBuf, new_name: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -157,6 +167,7 @@ impl AppState {
             command_line: String::new(),
             status_message: None,
             show_help: false,
+            pending_operation: None,
         })
     }
 
