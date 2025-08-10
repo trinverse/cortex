@@ -4,8 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub general: GeneralConfig,
@@ -33,7 +32,7 @@ pub struct GeneralConfig {
     pub terminal: String,
     #[serde(default = "default_editor")]
     pub editor: String,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub auto_reload: bool,
     #[serde(default = "default_true")]
     pub confirm_operations: bool,
@@ -67,8 +66,7 @@ pub struct ColorConfig {
     pub symlink_fg: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KeybindingConfig {
     #[serde(default)]
     pub custom: Vec<CustomKeybinding>,
@@ -106,7 +104,6 @@ pub struct CustomKeybinding {
     pub command: String,
 }
 
-
 impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
@@ -115,7 +112,7 @@ impl Default for GeneralConfig {
             show_icons: false,
             terminal: default_terminal(),
             editor: default_editor(),
-            auto_reload: true,
+            auto_reload: false,
             confirm_operations: true,
             enable_sound: false,
             plugin_directory: default_plugin_dir(),
@@ -144,7 +141,6 @@ impl Default for ColorConfig {
         }
     }
 }
-
 
 impl Default for PluginConfig {
     fn default() -> Self {

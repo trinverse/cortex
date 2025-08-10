@@ -2,6 +2,7 @@ pub mod cache;
 pub mod config;
 pub mod file_monitor;
 pub mod fs;
+pub mod git;
 pub mod memory;
 pub mod operations;
 pub mod search;
@@ -18,6 +19,7 @@ pub use file_monitor::{
     ChangeNotification, EventCallback, FileMonitor, FileMonitorEvent, FileMonitorManager,
 };
 pub use fs::{FileEntry, FileSystem, FileType};
+pub use git::{get_git_info, GitInfo};
 pub use memory::{
     CompressedFileEntry, MemoryManager, MemoryStats, ObjectPool, PathTable, StringPool,
 };

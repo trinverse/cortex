@@ -218,12 +218,7 @@ impl SearchDialog {
             SearchType::Contains => options.push("Search type: Contains".to_string()),
         }
 
-        let options_list = List::new(
-            options
-                .into_iter()
-                .map(ListItem::new)
-                .collect::<Vec<_>>(),
-        );
+        let options_list = List::new(options.into_iter().map(ListItem::new).collect::<Vec<_>>());
         frame.render_widget(options_list, options_inner);
 
         // Help

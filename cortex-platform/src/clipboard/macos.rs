@@ -10,7 +10,6 @@ use std::path::Path;
 #[derive(Default)]
 pub struct MacOSClipboard {}
 
-
 impl MacOSClipboard {
     pub fn new() -> Self {
         Self::default()

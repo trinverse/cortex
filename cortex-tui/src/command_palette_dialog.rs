@@ -57,6 +57,12 @@ impl CommandPaletteDialog {
                 category: "System".to_string(),
             },
             CommandInfo {
+                name: "/restart".to_string(),
+                description: "Restart Cortex application".to_string(),
+                shortcut: None,
+                category: "System".to_string(),
+            },
+            CommandInfo {
                 name: "/help".to_string(),
                 description: "Show help dialog".to_string(),
                 shortcut: Some("F1".to_string()),
@@ -173,6 +179,12 @@ impl CommandPaletteDialog {
             CommandInfo {
                 name: "/settings".to_string(),
                 description: "Open settings dialog".to_string(),
+                shortcut: None,
+                category: "Settings".to_string(),
+            },
+            CommandInfo {
+                name: "/theme".to_string(),
+                description: "Change color theme".to_string(),
                 shortcut: None,
                 category: "Settings".to_string(),
             },

@@ -1,9 +1,11 @@
-name: Release for Homebrew
+name: Release and Update Homebrew
 
 on:
   push:
     tags:
       - 'v*'
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -15,6 +17,9 @@ jobs:
   build-binaries:
     name: Build ${{ matrix.os }} ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
+    # Only run build if triggered by tag push or workflow_dispatch
+    # Skip if triggered by release event (binaries already exist)
+    if: github.event_name != 'release'
     strategy:
       matrix:
         include:
@@ -68,14 +73,14 @@ jobs:
           cp target/${{ matrix.target }}/release/cortex dist/
           cd dist
           
-          # Create tarball
-          tar czf "cortex-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" cortex
+          # Create tarball with consistent naming
+          tar czf "cortex-${VERSION}-${{ matrix.target }}.tar.gz" cortex
           
           # Generate SHA256
           if [ "${{ matrix.os }}" = "macos" ]; then
-            shasum -a 256 "cortex-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" > "cortex-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256"
+            shasum -a 256 "cortex-${VERSION}-${{ matrix.target }}.tar.gz" > "cortex-${VERSION}-${{ matrix.target }}.tar.gz.sha256"
           else
-            sha256sum "cortex-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" > "cortex-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256"
+            sha256sum "cortex-${VERSION}-${{ matrix.target }}.tar.gz" > "cortex-${VERSION}-${{ matrix.target }}.tar.gz.sha256"
           fi
           
           echo "SHA256: $(cat *.sha256)"
@@ -83,13 +88,15 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cortex-${{ matrix.os }}-${{ matrix.arch }}
+          name: cortex-${{ matrix.target }}
           path: dist/*.tar.gz*
 
   create-release:
     name: Create GitHub Release
     needs: build-binaries
     runs-on: ubuntu-latest
+    # Only create release if we built binaries (not triggered by release event)
+    if: github.event_name != 'release'
     
     steps:
       - name: Checkout
@@ -149,56 +156,107 @@ jobs:
   
   update-homebrew-formula:
     name: Update Homebrew Formula
-    needs: create-release
+    needs: [build-binaries, create-release]
+    # Always run except when no builds were done
+    if: always() && (needs.build-binaries.result == 'success' || needs.build-binaries.result == 'skipped')
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout main repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Download artifacts
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      # Download artifacts if we built them
+      - name: Download build artifacts
+        if: github.event_name != 'release'
         uses: actions/download-artifact@v4
         with:
           path: artifacts
       
-      - name: Update Formula
+      # Download from release if triggered by release event
+      - name: Download release artifacts
+        if: github.event_name == 'release'
         run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ steps.get_version.outputs.version }}"
+          mkdir -p artifacts
           
-          # Get SHA256 values
-          SHA_MACOS_X86=$(cat artifacts/cortex-macos-x86_64/*.sha256 | cut -d' ' -f1)
-          SHA_MACOS_ARM=$(cat artifacts/cortex-macos-aarch64/*.sha256 | cut -d' ' -f1)
-          SHA_LINUX_X86=$(cat artifacts/cortex-linux-x86_64/*.sha256 | cut -d' ' -f1)
-          SHA_LINUX_ARM=$(cat artifacts/cortex-linux-aarch64/*.sha256 | cut -d' ' -f1)
+          # Download all platform builds
+          wget -q "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-x86_64-apple-darwin.tar.gz" -P artifacts/
+          wget -q "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-aarch64-apple-darwin.tar.gz" -P artifacts/
+          wget -q "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-x86_64-unknown-linux-gnu.tar.gz" -P artifacts/
+          wget -q "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-aarch64-unknown-linux-gnu.tar.gz" -P artifacts/
+      
+      - name: Calculate checksums
+        id: checksums
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
           
-          # Update formula in main repo
+          # Find and calculate checksums
+          if [ "${{ github.event_name }}" = "release" ]; then
+            # Files downloaded directly
+            SHA_DARWIN_X64=$(sha256sum artifacts/cortex-*-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)
+            SHA_DARWIN_ARM64=$(sha256sum artifacts/cortex-*-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)
+            SHA_LINUX_X64=$(sha256sum artifacts/cortex-*-x86_64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)
+            SHA_LINUX_ARM64=$(sha256sum artifacts/cortex-*-aarch64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)
+          else
+            # Files from build artifacts
+            SHA_DARWIN_X64=$(find artifacts -name "*x86_64-apple-darwin.tar.gz.sha256" -exec cat {} \; | cut -d' ' -f1)
+            SHA_DARWIN_ARM64=$(find artifacts -name "*aarch64-apple-darwin.tar.gz.sha256" -exec cat {} \; | cut -d' ' -f1)
+            SHA_LINUX_X64=$(find artifacts -name "*x86_64-unknown-linux-gnu.tar.gz.sha256" -exec cat {} \; | cut -d' ' -f1)
+            SHA_LINUX_ARM64=$(find artifacts -name "*aarch64-unknown-linux-gnu.tar.gz.sha256" -exec cat {} \; | cut -d' ' -f1)
+          fi
+          
+          echo "darwin_x64=$SHA_DARWIN_X64" >> $GITHUB_OUTPUT
+          echo "darwin_arm64=$SHA_DARWIN_ARM64" >> $GITHUB_OUTPUT
+          echo "linux_x64=$SHA_LINUX_X64" >> $GITHUB_OUTPUT
+          echo "linux_arm64=$SHA_LINUX_ARM64" >> $GITHUB_OUTPUT
+      
+      - name: Generate Homebrew Formula
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          SHA_DARWIN_X64="${{ steps.checksums.outputs.darwin_x64 }}"
+          SHA_DARWIN_ARM64="${{ steps.checksums.outputs.darwin_arm64 }}"
+          SHA_LINUX_X64="${{ steps.checksums.outputs.linux_x64 }}"
+          SHA_LINUX_ARM64="${{ steps.checksums.outputs.linux_arm64 }}"
+          
+          mkdir -p Formula
           cat > Formula/cortex.rb << EOF
           class Cortex < Formula
             desc "Modern terminal file manager with dual-pane interface"
-            homepage "https://github.com/trinverse/cortex"
-            version "${VERSION}"
+            homepage "https://github.com/${{ github.repository }}"
+            version "$VERSION"
             license "MIT"
           
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/trinverse/cortex/releases/download/v${VERSION}/cortex-${VERSION}-macos-aarch64.tar.gz"
-                sha256 "${SHA_MACOS_ARM}"
+                url "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-aarch64-apple-darwin.tar.gz"
+                sha256 "$SHA_DARWIN_ARM64"
               else
-                url "https://github.com/trinverse/cortex/releases/download/v${VERSION}/cortex-${VERSION}-macos-x86_64.tar.gz"
-                sha256 "${SHA_MACOS_X86}"
+                url "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-x86_64-apple-darwin.tar.gz"
+                sha256 "$SHA_DARWIN_X64"
               end
             end
           
             on_linux do
               if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
-                url "https://github.com/trinverse/cortex/releases/download/v${VERSION}/cortex-${VERSION}-linux-aarch64.tar.gz"
-                sha256 "${SHA_LINUX_ARM}"
+                url "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "$SHA_LINUX_ARM64"
               else
-                url "https://github.com/trinverse/cortex/releases/download/v${VERSION}/cortex-${VERSION}-linux-x86_64.tar.gz"
-                sha256 "${SHA_LINUX_X86}"
+                url "https://github.com/${{ github.repository }}/releases/download/v$VERSION/cortex-$VERSION-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "$SHA_LINUX_X64"
               end
             end
           
@@ -211,11 +269,32 @@ jobs:
             end
           end
           EOF
+          
+          echo "Formula generated successfully:"
+          cat Formula/cortex.rb
       
-      - name: Commit and push
+      # Update formula in main repository
+      - name: Commit formula to main repo
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add Formula/cortex.rb
-          git commit -m "chore: Update Homebrew formula for ${{ github.event.inputs.version || github.ref_name }}"
-          git push
+          git diff --staged --quiet || git commit -m "chore: Update Homebrew formula for v${{ steps.get_version.outputs.version }}"
+          git push || echo "No changes to push"
+      
+      # Create PR to Homebrew tap repository
+      - name: Create Pull Request to Homebrew Tap
+        if: secrets.HOMEBREW_TAP_TOKEN != ''
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          push-to-fork: trinverse/homebrew-cortex
+          repository: ${{ github.repository_owner }}/homebrew-cortex
+          commit-message: "Update Cortex to v${{ steps.get_version.outputs.version }}"
+          branch: update-v${{ steps.get_version.outputs.version }}
+          title: "Update Cortex to v${{ steps.get_version.outputs.version }}"
+          body: |
+            Updates Cortex formula to version ${{ steps.get_version.outputs.version }}
+            
+            Release notes: https://github.com/${{ github.repository }}/releases/tag/v${{ steps.get_version.outputs.version }}
+          base: main

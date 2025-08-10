@@ -367,7 +367,6 @@ pub struct PluginManager {
     plugin_commands: HashMap<String, String>, // command -> plugin_name
 }
 
-
 impl PluginManager {
     pub fn new() -> Self {
         Self::default()

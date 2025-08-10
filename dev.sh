@@ -15,7 +15,7 @@ MAGENTA='\033[0;35m'
 NC='\033[0m' # No Color
 
 # Default values
-MODE="simple"  # Changed default to simple mode - no dependencies needed
+MODE="watch"  # Default to watch mode for best development experience; falls back to simple if cargo-watch is unavailable
 BUILD_TYPE="debug"
 
 # Parse command line arguments

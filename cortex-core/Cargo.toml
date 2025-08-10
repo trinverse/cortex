@@ -37,6 +37,9 @@ cortex-platform = { path = "../cortex-platform" }
 crossterm = { workspace = true }
 ratatui = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 # [features]
 # default = []
 # ssh = ["ssh2", "suppaftp"]
