@@ -285,8 +285,7 @@ impl UI {
             VfsEntryType::Symlink => style.fg(theme.symlink),
             VfsEntryType::File => {
                 // Try to infer type from extension
-                let extension = entry.name.split('.').next_back().map(String::from);
-                let extension = entry.name.rsplitn(2, '.').next();
+                let extension = entry.name.rsplit('.').next();
                 if let Some(ext) = extension {
                     match ext.to_lowercase().as_str() {
                         "rs" | "go" | "py" | "js" | "ts" | "java" | "c" | "cpp" | "h" => {

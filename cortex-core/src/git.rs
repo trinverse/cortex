@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::process::Command;
 
+const SHORT_COMMIT_HASH_LEN: usize = 7;
+
 #[derive(Debug, Clone)]
 pub struct GitInfo {
     pub branch: String,
@@ -92,7 +94,10 @@ fn get_current_branch(path: &Path) -> Option<String> {
     if output.status.success() {
         let commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !commit.is_empty() {
-            return Some(format!("(detached: {})", &commit[..SHORT_COMMIT_HASH_LEN.min(commit.len())]));
+            return Some(format!(
+                "(detached: {})",
+                &commit[..SHORT_COMMIT_HASH_LEN.min(commit.len())]
+            ));
         }
     }
 

@@ -682,7 +682,7 @@ impl App {
                     LeaveAlternateScreen,
                     DisableMouseCapture
                 )?;
-                return Ok(());
+                return Ok(true);
             }
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 if self.state.command_line.is_empty() {
