@@ -135,7 +135,7 @@ Vcs-Git: https://github.com/trinverse/cortex.git
 
 Package: cortex
 Architecture: any
-Depends: \${shlibs:Depends}, \${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: Modern terminal file manager
  Cortex is a powerful terminal file manager written in Rust.
  Features dual-pane interface, vim-style navigation, and plugin support.
