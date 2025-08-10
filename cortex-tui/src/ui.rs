@@ -432,7 +432,10 @@ impl UI {
         };
 
         let theme_name = format!("{:?}", theme.mode);
-        let right_text = format!("{} items | {} | {} | F1 Help ", file_count, total_size, theme_name);
+        let right_text = format!(
+            "{} items | {} | {} | F1 Help ",
+            file_count, total_size, theme_name
+        );
 
         // Calculate spacing
         let left_width = left_text.width();

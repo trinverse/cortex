@@ -56,36 +56,36 @@ impl Theme {
     pub fn dark() -> Self {
         Self {
             mode: ThemeMode::Dark,
-            active_border: Color::Rgb(139, 233, 253),  // Bright cyan
-            inactive_border: Color::Rgb(68, 71, 90),   // Muted gray
+            active_border: Color::Rgb(139, 233, 253), // Bright cyan
+            inactive_border: Color::Rgb(68, 71, 90),  // Muted gray
 
-            directory: Color::Rgb(189, 147, 249),      // Soft purple (instead of light blue)
-            symlink: Color::Rgb(139, 233, 253),        // Cyan
-            executable: Color::Rgb(80, 250, 123),       // Mint green
-            regular_file: Color::Rgb(248, 248, 242),   // Off-white
-            source_code: Color::Rgb(139, 233, 253),    // Cyan for code files
-            document: Color::Rgb(241, 250, 140),       // Soft yellow
-            image: Color::Rgb(255, 121, 198),          // Pink
-            archive: Color::Rgb(255, 184, 108),        // Soft orange (instead of red)
-            hidden: Color::Rgb(98, 114, 164),          // Muted blue-gray
+            directory: Color::Rgb(189, 147, 249), // Soft purple (instead of light blue)
+            symlink: Color::Rgb(139, 233, 253),   // Cyan
+            executable: Color::Rgb(80, 250, 123), // Mint green
+            regular_file: Color::Rgb(248, 248, 242), // Off-white
+            source_code: Color::Rgb(139, 233, 253), // Cyan for code files
+            document: Color::Rgb(241, 250, 140),  // Soft yellow
+            image: Color::Rgb(255, 121, 198),     // Pink
+            archive: Color::Rgb(255, 184, 108),   // Soft orange (instead of red)
+            hidden: Color::Rgb(98, 114, 164),     // Muted blue-gray
 
-            selected_bg: Color::Rgb(68, 71, 90),       // Dracula-style selection
-            selected_fg: Color::Rgb(248, 248, 242),    // Off-white
+            selected_bg: Color::Rgb(68, 71, 90), // Dracula-style selection
+            selected_fg: Color::Rgb(248, 248, 242), // Off-white
             inactive_selected_bg: Color::Rgb(44, 47, 62),
-            marked: Color::Rgb(241, 250, 140),         // Soft yellow
+            marked: Color::Rgb(241, 250, 140), // Soft yellow
 
-            status_bar_bg: Color::Rgb(40, 42, 54),     // Dark purple-gray
-            status_bar_fg: Color::Rgb(248, 248, 242),  // Off-white
-            command_line_bg: Color::Rgb(33, 34, 44),   // Slightly lighter than black
+            status_bar_bg: Color::Rgb(40, 42, 54), // Dark purple-gray
+            status_bar_fg: Color::Rgb(248, 248, 242), // Off-white
+            command_line_bg: Color::Rgb(33, 34, 44), // Slightly lighter than black
             command_line_fg: Color::Rgb(248, 248, 242),
 
-            error: Color::Rgb(255, 85, 85),            // Soft red
-            warning: Color::Rgb(255, 184, 108),        // Orange
-            success: Color::Rgb(80, 250, 123),         // Mint green
-            info: Color::Rgb(139, 233, 253),           // Cyan
+            error: Color::Rgb(255, 85, 85),     // Soft red
+            warning: Color::Rgb(255, 184, 108), // Orange
+            success: Color::Rgb(80, 250, 123),  // Mint green
+            info: Color::Rgb(139, 233, 253),    // Cyan
 
-            normal_text: Color::Rgb(248, 248, 242),    // Off-white
-            dim_text: Color::Rgb(98, 114, 164),        // Muted blue-gray
+            normal_text: Color::Rgb(248, 248, 242), // Off-white
+            dim_text: Color::Rgb(98, 114, 164),     // Muted blue-gray
             highlight_text: Color::Rgb(139, 233, 253), // Cyan
         }
     }
@@ -93,37 +93,37 @@ impl Theme {
     pub fn light() -> Self {
         Self {
             mode: ThemeMode::Light,
-            active_border: Color::Rgb(36, 41, 47),       // Dark border for active
-            inactive_border: Color::Rgb(208, 215, 222),  // Light gray for inactive
+            active_border: Color::Rgb(36, 41, 47), // Dark border for active
+            inactive_border: Color::Rgb(208, 215, 222), // Light gray for inactive
 
-            directory: Color::Rgb(7, 54, 110),           // Dark blue for directories
-            symlink: Color::Rgb(0, 91, 93),              // Dark teal for symlinks
-            executable: Color::Rgb(22, 98, 22),          // Dark green
-            regular_file: Color::Rgb(36, 41, 47),        // Dark gray
-            source_code: Color::Rgb(0, 48, 110),         // Dark blue for code
-            document: Color::Rgb(133, 65, 0),            // Dark orange for documents
-            image: Color::Rgb(102, 31, 117),             // Dark purple for images
-            archive: Color::Rgb(157, 42, 53),            // Dark red for archives
-            hidden: Color::Rgb(88, 96, 105),             // Medium gray for hidden
+            directory: Color::Rgb(7, 54, 110), // Dark blue for directories
+            symlink: Color::Rgb(0, 91, 93),    // Dark teal for symlinks
+            executable: Color::Rgb(22, 98, 22), // Dark green
+            regular_file: Color::Rgb(36, 41, 47), // Dark gray
+            source_code: Color::Rgb(0, 48, 110), // Dark blue for code
+            document: Color::Rgb(133, 65, 0),  // Dark orange for documents
+            image: Color::Rgb(102, 31, 117),   // Dark purple for images
+            archive: Color::Rgb(157, 42, 53),  // Dark red for archives
+            hidden: Color::Rgb(88, 96, 105),   // Medium gray for hidden
 
-            selected_bg: Color::Rgb(210, 227, 252),      // Light blue background
-            selected_fg: Color::Rgb(24, 28, 33),         // Very dark text on selection
+            selected_bg: Color::Rgb(210, 227, 252), // Light blue background
+            selected_fg: Color::Rgb(24, 28, 33),    // Very dark text on selection
             inactive_selected_bg: Color::Rgb(234, 238, 242), // Light gray background
-            marked: Color::Rgb(255, 235, 180),           // Light yellow background for marked
+            marked: Color::Rgb(255, 235, 180),      // Light yellow background for marked
 
-            status_bar_bg: Color::Rgb(246, 248, 250),    // Light gray background
-            status_bar_fg: Color::Rgb(36, 41, 47),       // Dark text
-            command_line_bg: Color::Rgb(255, 255, 255),  // White background
-            command_line_fg: Color::Rgb(24, 28, 33),     // Very dark text
+            status_bar_bg: Color::Rgb(246, 248, 250), // Light gray background
+            status_bar_fg: Color::Rgb(36, 41, 47),    // Dark text
+            command_line_bg: Color::Rgb(255, 255, 255), // White background
+            command_line_fg: Color::Rgb(24, 28, 33),  // Very dark text
 
-            error: Color::Rgb(157, 42, 53),              // Dark red
-            warning: Color::Rgb(133, 77, 14),            // Dark amber
-            success: Color::Rgb(28, 117, 48),            // Dark green
-            info: Color::Rgb(0, 71, 122),                // Dark blue
+            error: Color::Rgb(157, 42, 53),   // Dark red
+            warning: Color::Rgb(133, 77, 14), // Dark amber
+            success: Color::Rgb(28, 117, 48), // Dark green
+            info: Color::Rgb(0, 71, 122),     // Dark blue
 
-            normal_text: Color::Rgb(24, 28, 33),         // Very dark gray (almost black)
-            dim_text: Color::Rgb(88, 96, 105),           // Medium gray
-            highlight_text: Color::Rgb(0, 48, 110),      // Dark blue for highlights
+            normal_text: Color::Rgb(24, 28, 33), // Very dark gray (almost black)
+            dim_text: Color::Rgb(88, 96, 105),   // Medium gray
+            highlight_text: Color::Rgb(0, 48, 110), // Dark blue for highlights
         }
     }
 
@@ -204,37 +204,37 @@ impl Theme {
     pub fn modern() -> Self {
         Self {
             mode: ThemeMode::Modern,
-            active_border: Color::Rgb(100, 255, 218),     // Mint accent
-            inactive_border: Color::Rgb(61, 68, 85),      // Subtle gray
+            active_border: Color::Rgb(100, 255, 218), // Mint accent
+            inactive_border: Color::Rgb(61, 68, 85),  // Subtle gray
 
-            directory: Color::Rgb(130, 170, 255),         // Soft blue
-            symlink: Color::Rgb(100, 255, 218),           // Mint
-            executable: Color::Rgb(134, 239, 172),        // Lime green
-            regular_file: Color::Rgb(199, 210, 254),      // Light lavender
-            source_code: Color::Rgb(129, 140, 248),       // Indigo
-            document: Color::Rgb(253, 224, 71),           // Yellow
-            image: Color::Rgb(244, 114, 182),             // Pink
-            archive: Color::Rgb(251, 146, 60),            // Orange
-            hidden: Color::Rgb(100, 116, 139),            // Slate
+            directory: Color::Rgb(130, 170, 255),    // Soft blue
+            symlink: Color::Rgb(100, 255, 218),      // Mint
+            executable: Color::Rgb(134, 239, 172),   // Lime green
+            regular_file: Color::Rgb(199, 210, 254), // Light lavender
+            source_code: Color::Rgb(129, 140, 248),  // Indigo
+            document: Color::Rgb(253, 224, 71),      // Yellow
+            image: Color::Rgb(244, 114, 182),        // Pink
+            archive: Color::Rgb(251, 146, 60),       // Orange
+            hidden: Color::Rgb(100, 116, 139),       // Slate
 
-            selected_bg: Color::Rgb(56, 58, 89),          // Deep indigo
-            selected_fg: Color::Rgb(241, 245, 249),       // Near white
+            selected_bg: Color::Rgb(56, 58, 89),    // Deep indigo
+            selected_fg: Color::Rgb(241, 245, 249), // Near white
             inactive_selected_bg: Color::Rgb(39, 46, 58),
-            marked: Color::Rgb(253, 224, 71),             // Yellow
+            marked: Color::Rgb(253, 224, 71), // Yellow
 
-            status_bar_bg: Color::Rgb(30, 33, 41),        // Very dark blue-gray
-            status_bar_fg: Color::Rgb(199, 210, 254),     // Light lavender
-            command_line_bg: Color::Rgb(24, 26, 33),      // Almost black with blue tint
+            status_bar_bg: Color::Rgb(30, 33, 41), // Very dark blue-gray
+            status_bar_fg: Color::Rgb(199, 210, 254), // Light lavender
+            command_line_bg: Color::Rgb(24, 26, 33), // Almost black with blue tint
             command_line_fg: Color::Rgb(199, 210, 254),
 
-            error: Color::Rgb(248, 113, 113),             // Soft red
-            warning: Color::Rgb(251, 191, 36),            // Amber
-            success: Color::Rgb(134, 239, 172),           // Lime
-            info: Color::Rgb(100, 255, 218),              // Mint
+            error: Color::Rgb(248, 113, 113),   // Soft red
+            warning: Color::Rgb(251, 191, 36),  // Amber
+            success: Color::Rgb(134, 239, 172), // Lime
+            info: Color::Rgb(100, 255, 218),    // Mint
 
-            normal_text: Color::Rgb(199, 210, 254),       // Light lavender
-            dim_text: Color::Rgb(100, 116, 139),          // Slate
-            highlight_text: Color::Rgb(100, 255, 218),    // Mint
+            normal_text: Color::Rgb(199, 210, 254), // Light lavender
+            dim_text: Color::Rgb(100, 116, 139),    // Slate
+            highlight_text: Color::Rgb(100, 255, 218), // Mint
         }
     }
 

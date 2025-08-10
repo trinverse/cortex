@@ -409,7 +409,7 @@ impl AppState {
                 _ => {}
             }
         }
-        
+
         // Check terminal background - many terminals set COLORFGBG
         if let Ok(colorfgbg) = std::env::var("COLORFGBG") {
             // Format is typically "foreground;background" like "0;15" or "15;0"
@@ -423,7 +423,7 @@ impl AppState {
                 }
             }
         }
-        
+
         // Check macOS appearance
         #[cfg(target_os = "macos")]
         {
@@ -441,7 +441,7 @@ impl AppState {
                 return crate::ThemeMode::Light;
             }
         }
-        
+
         // Default to Light theme since your terminal appears to be light
         crate::ThemeMode::Light
     }
