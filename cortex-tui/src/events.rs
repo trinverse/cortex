@@ -1,5 +1,7 @@
 use anyhow::Result;
-use crossterm::event::{self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent};
+use crossterm::event::{
+    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent,
+};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -44,7 +46,10 @@ impl EventHandler {
             }
         });
 
-        Self { _sender: sender, receiver }
+        Self {
+            _sender: sender,
+            receiver,
+        }
     }
 
     pub async fn next(&mut self) -> Result<Event> {
@@ -99,7 +104,7 @@ impl KeyBinding {
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(Self::Quit),
             (KeyCode::F(1), _) => Some(Self::Help),
             (KeyCode::Char('?'), _) => Some(Self::Help),
-            
+
             (KeyCode::Up, _) => Some(Self::Up),
             (KeyCode::Down, _) => Some(Self::Down),
             (KeyCode::Left, _) => Some(Self::Left),
@@ -111,32 +116,32 @@ impl KeyBinding {
             (KeyCode::PageUp, _) => Some(Self::PageUp),
             (KeyCode::PageDown, _) => Some(Self::PageDown),
             (KeyCode::Tab, _) => Some(Self::Tab),
-            
+
             (KeyCode::F(5), _) => Some(Self::Copy),
             (KeyCode::F(6), _) => Some(Self::Move),
             (KeyCode::F(8), _) => Some(Self::Delete),
             (KeyCode::F(7), _) => Some(Self::MakeDir),
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => Some(Self::Rename),
-            
+
             (KeyCode::Char('/'), _) => Some(Self::Search),
             (KeyCode::Char('h'), KeyModifiers::CONTROL) => Some(Self::ToggleHidden),
             (KeyCode::Char(' '), _) => Some(Self::ToggleMark),
             (KeyCode::Char('a'), KeyModifiers::CONTROL) => Some(Self::MarkAll),
             (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Self::UnmarkAll),
             (KeyCode::Char('r'), KeyModifiers::ALT) => Some(Self::Refresh),
-            
+
             (KeyCode::F(3), _) => Some(Self::ViewFile),
             (KeyCode::F(4), _) => Some(Self::EditFile),
-            
+
             (KeyCode::Char('1'), KeyModifiers::ALT) => Some(Self::SortByName),
             (KeyCode::Char('2'), KeyModifiers::ALT) => Some(Self::SortBySize),
             (KeyCode::Char('3'), KeyModifiers::ALT) => Some(Self::SortByDate),
             (KeyCode::Char('4'), KeyModifiers::ALT) => Some(Self::SortByExt),
-            
+
             (KeyCode::Char(':'), _) => Some(Self::CommandMode),
             (KeyCode::Char('o'), KeyModifiers::CONTROL) => Some(Self::CommandMode),
             (KeyCode::Esc, _) => Some(Self::CancelCommand),
-            
+
             _ => None,
         }
     }

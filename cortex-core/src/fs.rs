@@ -64,7 +64,7 @@ impl FileEntry {
 
         let permissions = format_permissions(&metadata);
         let is_hidden = name.starts_with('.');
-        
+
         let extension = if file_type == FileType::File {
             path.extension()
                 .and_then(|ext| ext.to_str())
@@ -135,7 +135,7 @@ pub struct FileSystem;
 impl FileSystem {
     pub fn list_directory(path: &Path, show_hidden: bool) -> Result<Vec<FileEntry>> {
         let mut entries = Vec::new();
-        
+
         if path.parent().is_some() {
             entries.push(FileEntry::parent());
         }
@@ -143,20 +143,18 @@ impl FileSystem {
         for entry in fs::read_dir(path)? {
             let entry = entry?;
             let file_entry = FileEntry::from_path(&entry.path())?;
-            
+
             if !show_hidden && file_entry.is_hidden {
                 continue;
             }
-            
+
             entries.push(file_entry);
         }
 
-        entries.sort_by(|a, b| {
-            match (&a.file_type, &b.file_type) {
-                (FileType::Directory, FileType::File) => std::cmp::Ordering::Less,
-                (FileType::File, FileType::Directory) => std::cmp::Ordering::Greater,
-                _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-            }
+        entries.sort_by(|a, b| match (&a.file_type, &b.file_type) {
+            (FileType::Directory, FileType::File) => std::cmp::Ordering::Less,
+            (FileType::File, FileType::Directory) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
         });
 
         Ok(entries)
@@ -202,7 +200,7 @@ impl FileSystem {
 
     fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         fs::create_dir_all(dst)?;
-        
+
         for entry in fs::read_dir(src)? {
             let entry = entry?;
             let file_type = entry.file_type()?;
@@ -215,7 +213,7 @@ impl FileSystem {
                 fs::copy(&src_path, &dst_path)?;
             }
         }
-        
+
         Ok(())
     }
 

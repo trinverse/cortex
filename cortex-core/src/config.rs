@@ -157,9 +157,7 @@ impl Default for ColorConfig {
 
 impl Default for KeybindingConfig {
     fn default() -> Self {
-        Self {
-            custom: Vec::new(),
-        }
+        Self { custom: Vec::new() }
     }
 }
 
@@ -186,17 +184,39 @@ impl Default for NetworkConfig {
     }
 }
 
-fn default_true() -> bool { true }
-fn default_false() -> bool { false }
-fn default_terminal() -> String { "bash".to_string() }
-fn default_editor() -> String { "vim".to_string() }
-fn default_sort() -> String { "name".to_string() }
-fn default_selection_bg() -> String { "blue".to_string() }
-fn default_directory_fg() -> String { "cyan".to_string() }
-fn default_executable_fg() -> String { "green".to_string() }
-fn default_symlink_fg() -> String { "magenta".to_string() }
-fn default_plugin_dir() -> String { "plugins".to_string() }
-fn default_connection_timeout() -> u64 { 30 }
+fn default_true() -> bool {
+    true
+}
+fn default_false() -> bool {
+    false
+}
+fn default_terminal() -> String {
+    "bash".to_string()
+}
+fn default_editor() -> String {
+    "vim".to_string()
+}
+fn default_sort() -> String {
+    "name".to_string()
+}
+fn default_selection_bg() -> String {
+    "blue".to_string()
+}
+fn default_directory_fg() -> String {
+    "cyan".to_string()
+}
+fn default_executable_fg() -> String {
+    "green".to_string()
+}
+fn default_symlink_fg() -> String {
+    "magenta".to_string()
+}
+fn default_plugin_dir() -> String {
+    "plugins".to_string()
+}
+fn default_connection_timeout() -> u64 {
+    30
+}
 
 pub struct ConfigManager {
     config: Arc<RwLock<Config>>,
@@ -207,25 +227,25 @@ impl ConfigManager {
     pub fn new() -> Result<Self> {
         let config_path = Self::get_config_path()?;
         let config = Self::load_or_create(&config_path)?;
-        
+
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
             config_path,
         })
     }
-    
+
     pub fn get_config_path() -> Result<PathBuf> {
-        let config_dir = dirs::config_dir()
-            .ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?;
-        
+        let config_dir =
+            dirs::config_dir().ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?;
+
         let cortex_config_dir = config_dir.join("cortex");
         if !cortex_config_dir.exists() {
             fs::create_dir_all(&cortex_config_dir)?;
         }
-        
+
         Ok(cortex_config_dir.join("config.toml"))
     }
-    
+
     fn load_or_create(path: &Path) -> Result<Config> {
         if path.exists() {
             let contents = fs::read_to_string(path)?;
@@ -237,18 +257,18 @@ impl ConfigManager {
             Ok(config)
         }
     }
-    
+
     pub fn reload(&self) -> Result<()> {
         let config = Self::load_or_create(&self.config_path)?;
         let mut write_guard = self.config.write().unwrap();
         *write_guard = config;
         Ok(())
     }
-    
+
     pub fn get(&self) -> Config {
         self.config.read().unwrap().clone()
     }
-    
+
     pub fn update<F>(&self, f: F) -> Result<()>
     where
         F: FnOnce(&mut Config),
@@ -259,16 +279,16 @@ impl ConfigManager {
         fs::write(&self.config_path, contents)?;
         Ok(())
     }
-    
+
     pub fn watch_for_changes(&self) -> Result<()> {
-        use notify::{Watcher, RecursiveMode, recommended_watcher, Event, EventKind};
+        use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
         use std::sync::mpsc::channel;
         use std::time::Duration;
-        
+
         let (tx, rx) = channel();
         let config_path = self.config_path.clone();
         let manager = self.clone();
-        
+
         let mut watcher = recommended_watcher(move |res: Result<Event, notify::Error>| {
             if let Ok(event) = res {
                 if matches!(event.kind, EventKind::Modify(_)) {
@@ -276,9 +296,9 @@ impl ConfigManager {
                 }
             }
         })?;
-        
+
         watcher.watch(&config_path, RecursiveMode::NonRecursive)?;
-        
+
         std::thread::spawn(move || {
             while rx.recv().is_ok() {
                 std::thread::sleep(Duration::from_millis(100)); // Debounce
@@ -287,7 +307,7 @@ impl ConfigManager {
                 }
             }
         });
-        
+
         Ok(())
     }
 }

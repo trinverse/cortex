@@ -34,7 +34,7 @@ impl CommandPaletteDialog {
             all_commands,
         }
     }
-    
+
     fn get_all_commands() -> Vec<CommandInfo> {
         vec![
             // System
@@ -56,7 +56,6 @@ impl CommandPaletteDialog {
                 shortcut: Some("F1".to_string()),
                 category: "Help".to_string(),
             },
-            
             // File operations
             CommandInfo {
                 name: "/copy".to_string(),
@@ -88,7 +87,6 @@ impl CommandPaletteDialog {
                 shortcut: None,
                 category: "Files".to_string(),
             },
-            
             // View
             CommandInfo {
                 name: "/view".to_string(),
@@ -114,7 +112,6 @@ impl CommandPaletteDialog {
                 shortcut: Some("Alt+F7".to_string()),
                 category: "Search".to_string(),
             },
-            
             // Navigation
             CommandInfo {
                 name: "/cd".to_string(),
@@ -134,7 +131,6 @@ impl CommandPaletteDialog {
                 shortcut: None,
                 category: "Navigation".to_string(),
             },
-            
             // Settings
             CommandInfo {
                 name: "/hidden".to_string(),
@@ -148,7 +144,6 @@ impl CommandPaletteDialog {
                 shortcut: None,
                 category: "View".to_string(),
             },
-            
             // Remote Connections
             CommandInfo {
                 name: "/sftp".to_string(),
@@ -162,7 +157,6 @@ impl CommandPaletteDialog {
                 shortcut: None,
                 category: "Remote".to_string(),
             },
-            
             // Configuration
             CommandInfo {
                 name: "/config".to_string(),
@@ -176,7 +170,6 @@ impl CommandPaletteDialog {
                 shortcut: None,
                 category: "Settings".to_string(),
             },
-            
             // Plugin System
             CommandInfo {
                 name: "/plugin".to_string(),
@@ -214,7 +207,6 @@ impl CommandPaletteDialog {
                 shortcut: None,
                 category: "Plugins".to_string(),
             },
-            
             // File Monitoring
             CommandInfo {
                 name: "/monitor".to_string(),
@@ -236,103 +228,110 @@ impl CommandPaletteDialog {
             },
         ]
     }
-    
+
     pub fn filter_commands(&mut self) {
         let query = self.input.trim().to_lowercase();
-        
+
         if query == "/" {
             // Show all commands
             self.filtered_commands = self.all_commands.clone();
         } else if query.starts_with('/') {
             // Filter based on text after /
             let search = &query[1..];
-            self.filtered_commands = self.all_commands
+            self.filtered_commands = self
+                .all_commands
                 .iter()
                 .filter(|cmd| {
-                    cmd.name[1..].to_lowercase().contains(search) ||
-                    cmd.description.to_lowercase().contains(search) ||
-                    cmd.category.to_lowercase().contains(search)
+                    cmd.name[1..].to_lowercase().contains(search)
+                        || cmd.description.to_lowercase().contains(search)
+                        || cmd.category.to_lowercase().contains(search)
                 })
                 .cloned()
                 .collect();
-            
+
             // Sort by relevance
             self.filtered_commands.sort_by(|a, b| {
                 let a_starts = a.name[1..].to_lowercase().starts_with(search);
                 let b_starts = b.name[1..].to_lowercase().starts_with(search);
-                
+
                 match (a_starts, b_starts) {
                     (true, false) => std::cmp::Ordering::Less,
                     (false, true) => std::cmp::Ordering::Greater,
-                    _ => a.category.cmp(&b.category).then_with(|| a.name.cmp(&b.name))
+                    _ => a
+                        .category
+                        .cmp(&b.category)
+                        .then_with(|| a.name.cmp(&b.name)),
                 }
             });
         }
-        
+
         // Reset selection if needed
-        if self.selected_index >= self.filtered_commands.len() && !self.filtered_commands.is_empty() {
+        if self.selected_index >= self.filtered_commands.len() && !self.filtered_commands.is_empty()
+        {
             self.selected_index = 0;
         }
     }
-    
+
     pub fn insert_char(&mut self, c: char) {
         self.input.insert(self.cursor_position, c);
         self.cursor_position += 1;
         self.filter_commands();
     }
-    
+
     pub fn delete_char(&mut self) {
-        if self.cursor_position > 1 {  // Don't delete the initial /
+        if self.cursor_position > 1 {
+            // Don't delete the initial /
             self.cursor_position -= 1;
             self.input.remove(self.cursor_position);
             self.filter_commands();
         }
     }
-    
+
     pub fn move_cursor_left(&mut self) {
-        if self.cursor_position > 1 {  // Don't go before /
+        if self.cursor_position > 1 {
+            // Don't go before /
             self.cursor_position -= 1;
         }
     }
-    
+
     pub fn move_cursor_right(&mut self) {
         if self.cursor_position < self.input.len() {
             self.cursor_position += 1;
         }
     }
-    
+
     pub fn move_selection_up(&mut self) {
         if self.selected_index > 0 {
             self.selected_index -= 1;
         }
     }
-    
+
     pub fn move_selection_down(&mut self) {
         if self.selected_index < self.filtered_commands.len().saturating_sub(1) {
             self.selected_index += 1;
         }
     }
-    
+
     pub fn get_selected_command(&self) -> Option<String> {
         self.filtered_commands
             .get(self.selected_index)
             .map(|cmd| cmd.name.clone())
     }
-    
+
     pub fn render(&self, frame: &mut Frame) {
         let area = centered_rect(70, 80, frame.area());
         frame.render_widget(Clear, area);
-        
+
         // Main layout
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),  // Input area
-                Constraint::Min(5),     // Command list
-                Constraint::Length(2),  // Help line
+                Constraint::Length(3), // Input area
+                Constraint::Min(5),    // Command list
+                Constraint::Length(2), // Help line
             ])
             .split(area);
-        
+
         // Input area
         let input_block = Block::default()
             .title(" Command Palette ")
@@ -340,24 +339,21 @@ impl CommandPaletteDialog {
             .border_style(Style::default().fg(Color::Yellow));
         let input_inner = input_block.inner(chunks[0]);
         frame.render_widget(input_block, chunks[0]);
-        
-        let input_text = Paragraph::new(self.input.as_str())
-            .style(Style::default().fg(Color::White));
+
+        let input_text =
+            Paragraph::new(self.input.as_str()).style(Style::default().fg(Color::White));
         frame.render_widget(input_text, input_inner);
-        
+
         // Show cursor
-        frame.set_cursor_position((
-            input_inner.x + self.cursor_position as u16,
-            input_inner.y,
-        ));
-        
+        frame.set_cursor_position((input_inner.x + self.cursor_position as u16, input_inner.y));
+
         // Command list
         let list_block = Block::default()
             .borders(Borders::LEFT | Borders::RIGHT)
             .border_style(Style::default().fg(Color::Yellow));
         let list_inner = list_block.inner(chunks[1]);
         frame.render_widget(list_block, chunks[1]);
-        
+
         if self.filtered_commands.is_empty() {
             let no_results = Paragraph::new("No matching commands")
                 .style(Style::default().fg(Color::DarkGray))
@@ -367,21 +363,19 @@ impl CommandPaletteDialog {
             // Group commands by category
             let mut items = Vec::new();
             let mut current_category = String::new();
-            
+
             for (idx, cmd) in self.filtered_commands.iter().enumerate() {
                 // Add category header if changed
                 if cmd.category != current_category {
                     current_category = cmd.category.clone();
-                    items.push(ListItem::new(Line::from(vec![
-                        Span::styled(
-                            format!(" {} ", current_category),
-                            Style::default()
-                                .fg(Color::Cyan)
-                                .add_modifier(Modifier::BOLD)
-                        )
-                    ])));
+                    items.push(ListItem::new(Line::from(vec![Span::styled(
+                        format!(" {} ", current_category),
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    )])));
                 }
-                
+
                 // Create command item
                 let is_selected = idx == self.selected_index;
                 let style = if is_selected {
@@ -389,41 +383,38 @@ impl CommandPaletteDialog {
                 } else {
                     Style::default()
                 };
-                
+
                 let mut spans = vec![
                     Span::styled("  ", style),
                     Span::styled(
                         format!("{:<15}", cmd.name),
-                        style.fg(Color::Green).add_modifier(Modifier::BOLD)
+                        style.fg(Color::Green).add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(" ", style),
-                    Span::styled(
-                        format!("{:<40}", cmd.description),
-                        style.fg(Color::White)
-                    ),
+                    Span::styled(format!("{:<40}", cmd.description), style.fg(Color::White)),
                 ];
-                
+
                 if let Some(ref shortcut) = cmd.shortcut {
                     spans.push(Span::styled(
                         format!(" [{}]", shortcut),
-                        style.fg(Color::DarkGray)
+                        style.fg(Color::DarkGray),
                     ));
                 }
-                
+
                 items.push(ListItem::new(Line::from(spans)));
             }
-            
+
             let list = List::new(items);
             frame.render_widget(list, list_inner);
         }
-        
+
         // Help line
         let help_block = Block::default()
             .borders(Borders::BOTTOM | Borders::LEFT | Borders::RIGHT)
             .border_style(Style::default().fg(Color::Yellow));
         let help_inner = help_block.inner(chunks[2]);
         frame.render_widget(help_block, chunks[2]);
-        
+
         let help_text = " ↑↓: Navigate | Enter: Execute | Tab: Autocomplete | ESC: Cancel ";
         let help = Paragraph::new(help_text)
             .style(Style::default().fg(Color::DarkGray))

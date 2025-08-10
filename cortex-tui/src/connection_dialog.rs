@@ -69,7 +69,13 @@ impl ConnectionDialog {
             0 => &self.host,
             1 => &self.port,
             2 => &self.username,
-            3 => if self.use_private_key { &self.private_key_path } else { &self.password },
+            3 => {
+                if self.use_private_key {
+                    &self.private_key_path
+                } else {
+                    &self.password
+                }
+            }
             4 => &self.password, // Only when use_private_key is true
             _ => &self.host,
         }
@@ -80,7 +86,13 @@ impl ConnectionDialog {
             0 => &mut self.host,
             1 => &mut self.port,
             2 => &mut self.username,
-            3 => if self.use_private_key { &mut self.private_key_path } else { &mut self.password },
+            3 => {
+                if self.use_private_key {
+                    &mut self.private_key_path
+                } else {
+                    &mut self.password
+                }
+            }
             4 => &mut self.password, // Only when use_private_key is true
             _ => &mut self.host,
         }
@@ -147,25 +159,31 @@ impl ConnectionDialog {
             .constraints([
                 Constraint::Length(2), // Instructions
                 Constraint::Length(3), // Host
-                Constraint::Length(3), // Port  
+                Constraint::Length(3), // Port
                 Constraint::Length(3), // Username
                 Constraint::Length(3), // Auth method toggle
                 Constraint::Length(3), // Password/Key field
-                if self.use_private_key { Constraint::Length(3) } else { Constraint::Length(0) }, // Password for key
+                if self.use_private_key {
+                    Constraint::Length(3)
+                } else {
+                    Constraint::Length(0)
+                }, // Password for key
                 Constraint::Min(2),    // Connect/Cancel buttons
             ])
             .split(inner);
 
         // Instructions
-        let instructions = Paragraph::new("Tab/Shift+Tab: navigate fields, Ctrl+T: toggle auth, Enter: connect, Esc: cancel")
-            .style(Style::default().fg(Color::Gray))
-            .alignment(Alignment::Center);
+        let instructions = Paragraph::new(
+            "Tab/Shift+Tab: navigate fields, Ctrl+T: toggle auth, Enter: connect, Esc: cancel",
+        )
+        .style(Style::default().fg(Color::Gray))
+        .alignment(Alignment::Center);
         frame.render_widget(instructions, chunks[0]);
 
         // Host field
         self.render_field(frame, chunks[1], "Host", &self.host, 0);
 
-        // Port field  
+        // Port field
         self.render_field(frame, chunks[2], "Port", &self.port, 1);
 
         // Username field
@@ -184,7 +202,13 @@ impl ConnectionDialog {
 
         // Password or Private Key field
         if self.use_private_key {
-            self.render_field(frame, chunks[5], "Private Key Path", &self.private_key_path, 3);
+            self.render_field(
+                frame,
+                chunks[5],
+                "Private Key Path",
+                &self.private_key_path,
+                3,
+            );
             if chunks.len() > 6 {
                 self.render_field(frame, chunks[6], "Passphrase", &self.password, 4);
             }
@@ -193,17 +217,32 @@ impl ConnectionDialog {
         }
 
         // Connect/Cancel buttons
-        let button_chunk = chunks[if self.use_private_key && chunks.len() > 6 { 7 } else { 6 }];
+        let button_chunk = chunks[if self.use_private_key && chunks.len() > 6 {
+            7
+        } else {
+            6
+        }];
         let buttons = Paragraph::new("[Enter] Connect    [Esc] Cancel")
-            .style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+            .style(
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            )
             .alignment(Alignment::Center);
         frame.render_widget(buttons, button_chunk);
     }
 
-    fn render_field(&self, frame: &mut Frame, area: Rect, label: &str, value: &str, field_index: usize) {
+    fn render_field(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        label: &str,
+        value: &str,
+        field_index: usize,
+    ) {
         let is_selected = self.selected_field == field_index;
         let is_password = label == "Password" || label == "Passphrase";
-        
+
         let display_value = if is_password && !value.is_empty() {
             "*".repeat(value.len())
         } else {
@@ -217,7 +256,9 @@ impl ConnectionDialog {
 
         // Label
         let label_style = if is_selected {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };

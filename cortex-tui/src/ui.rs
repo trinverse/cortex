@@ -1,4 +1,5 @@
 use cortex_core::{ActivePanel, AppState, FileEntry, FileType, PanelState, VfsEntry, VfsEntryType};
+use humansize;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -7,7 +8,6 @@ use ratatui::{
     Frame,
 };
 use unicode_width::UnicodeWidthStr;
-use humansize;
 
 pub struct UI;
 
@@ -27,15 +27,27 @@ impl UI {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(chunks[0]);
 
-        Self::draw_panel(frame, panels[0], &app.left_panel, app.active_panel == ActivePanel::Left);
-        Self::draw_panel(frame, panels[1], &app.right_panel, app.active_panel == ActivePanel::Right);
+        Self::draw_panel(
+            frame,
+            panels[0],
+            &app.left_panel,
+            app.active_panel == ActivePanel::Left,
+        );
+        Self::draw_panel(
+            frame,
+            panels[1],
+            &app.right_panel,
+            app.active_panel == ActivePanel::Right,
+        );
         Self::draw_command_line(frame, chunks[1], app);
         Self::draw_status_bar(frame, chunks[2], app);
     }
 
     fn draw_panel(frame: &mut Frame, area: Rect, panel: &PanelState, is_active: bool) {
         let border_style = if is_active {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Gray)
         };
@@ -44,9 +56,15 @@ impl UI {
             if panel.is_using_vfs() {
                 if let Some(ref vfs_path) = panel.current_vfs_path {
                     match vfs_path {
-                        cortex_core::VfsPath::Archive { .. } => format!(" [Archive] [Filter: {}] ", filter),
-                        cortex_core::VfsPath::Sftp { host, username, .. } => format!(" [SFTP: {}@{}] [Filter: {}] ", username, host, filter),
-                        cortex_core::VfsPath::Ftp { host, username, .. } => format!(" [FTP: {}@{}] [Filter: {}] ", username, host, filter),
+                        cortex_core::VfsPath::Archive { .. } => {
+                            format!(" [Archive] [Filter: {}] ", filter)
+                        }
+                        cortex_core::VfsPath::Sftp { host, username, .. } => {
+                            format!(" [SFTP: {}@{}] [Filter: {}] ", username, host, filter)
+                        }
+                        cortex_core::VfsPath::Ftp { host, username, .. } => {
+                            format!(" [FTP: {}@{}] [Filter: {}] ", username, host, filter)
+                        }
                         _ => format!(" [Remote] [Filter: {}] ", filter),
                     }
                 } else {
@@ -60,12 +78,22 @@ impl UI {
                 if let Some(ref vfs_path) = panel.current_vfs_path {
                     match vfs_path {
                         cortex_core::VfsPath::Archive { .. } => format!(" [Archive] "),
-                        cortex_core::VfsPath::Sftp { host, username, path, .. } => {
+                        cortex_core::VfsPath::Sftp {
+                            host,
+                            username,
+                            path,
+                            ..
+                        } => {
                             format!(" [SFTP: {}@{}:{}] ", username, host, path)
-                        },
-                        cortex_core::VfsPath::Ftp { host, username, path, .. } => {
+                        }
+                        cortex_core::VfsPath::Ftp {
+                            host,
+                            username,
+                            path,
+                            ..
+                        } => {
                             format!(" [FTP: {}@{}:{}] ", username, host, path)
-                        },
+                        }
                         _ => format!(" [Remote] "),
                     }
                 } else {
@@ -90,7 +118,7 @@ impl UI {
             // Render VFS entries
             let vfs_entries = panel.get_visible_vfs_entries();
             let end_idx = (start_idx + visible_height).min(vfs_entries.len());
-            
+
             vfs_entries[start_idx..end_idx]
                 .iter()
                 .enumerate()
@@ -100,7 +128,7 @@ impl UI {
 
                     let style = Self::get_vfs_entry_style(entry, is_selected, is_active);
                     let content = Self::format_vfs_entry(entry, inner_area.width as usize);
-                    
+
                     ListItem::new(Line::from(vec![Span::styled(content, style)]))
                 })
                 .collect()
@@ -108,7 +136,7 @@ impl UI {
             // Render regular entries
             let entries = panel.get_visible_entries();
             let end_idx = (start_idx + visible_height).min(entries.len());
-            
+
             entries[start_idx..end_idx]
                 .iter()
                 .enumerate()
@@ -119,7 +147,7 @@ impl UI {
 
                     let style = Self::get_entry_style(entry, is_selected, is_marked, is_active);
                     let content = Self::format_entry(entry, inner_area.width as usize);
-                    
+
                     ListItem::new(Line::from(vec![Span::styled(content, style)]))
                 })
                 .collect()
@@ -129,7 +157,12 @@ impl UI {
         frame.render_widget(list, inner_area);
     }
 
-    fn get_entry_style(entry: &FileEntry, is_selected: bool, is_marked: bool, panel_active: bool) -> Style {
+    fn get_entry_style(
+        entry: &FileEntry,
+        is_selected: bool,
+        is_marked: bool,
+        panel_active: bool,
+    ) -> Style {
         let mut style = Style::default();
 
         style = match entry.file_type {
@@ -184,7 +217,13 @@ impl UI {
 
         if name_width <= available_width {
             let padding = available_width - name_width;
-            format!("{}{:padding$} {}", name_with_indicator, "", size_str, padding = padding)
+            format!(
+                "{}{:padding$} {}",
+                name_with_indicator,
+                "",
+                size_str,
+                padding = padding
+            )
         } else {
             let truncated = Self::truncate_string(&name_with_indicator, available_width - 3);
             format!("{}... {}", truncated, size_str)
@@ -253,8 +292,11 @@ impl UI {
 
         let name_with_indicator = format!("{}{}", entry.name, type_indicator);
         let size_str = if let Some(compressed) = entry.compressed_size {
-            format!("{} ({})", humansize::format_size(entry.size, humansize::BINARY), 
-                    humansize::format_size(compressed, humansize::BINARY))
+            format!(
+                "{} ({})",
+                humansize::format_size(entry.size, humansize::BINARY),
+                humansize::format_size(compressed, humansize::BINARY)
+            )
         } else {
             humansize::format_size(entry.size, humansize::BINARY)
         };
@@ -265,7 +307,13 @@ impl UI {
 
         if name_width <= available_width {
             let padding = available_width - name_width;
-            format!("{}{:padding$} {}", name_with_indicator, "", size_str, padding = padding)
+            format!(
+                "{}{:padding$} {}",
+                name_with_indicator,
+                "",
+                size_str,
+                padding = padding
+            )
         } else {
             let truncated = Self::truncate_string(&name_with_indicator, available_width - 3);
             format!("{}... {}", truncated, size_str)
@@ -278,7 +326,7 @@ impl UI {
         } else {
             " Command Line (type to execute, / for special) "
         };
-        
+
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
@@ -289,11 +337,10 @@ impl UI {
 
         let prompt = "$ ";
         let text = format!("{}{}", prompt, app.command_line);
-        let paragraph = Paragraph::new(text)
-            .style(Style::default().fg(Color::White));
-        
+        let paragraph = Paragraph::new(text).style(Style::default().fg(Color::White));
+
         frame.render_widget(paragraph, inner_area);
-        
+
         // Always show cursor
         frame.set_cursor_position((
             inner_area.x + prompt.len() as u16 + app.command_cursor as u16,
@@ -304,35 +351,30 @@ impl UI {
     fn draw_status_bar(frame: &mut Frame, area: Rect, app: &AppState) {
         let active_panel = app.active_panel();
         let current_entry = active_panel.current_entry();
-        
+
         let left_text = if let Some(entry) = current_entry {
             format!(
                 " {} | {} | {}",
-                entry.name,
-                entry.size_display,
-                entry.permissions
+                entry.name, entry.size_display, entry.permissions
             )
         } else {
             " No selection".to_string()
         };
 
-        let (file_count, total_size) = if let Ok((count, size)) = 
-            cortex_core::FileSystem::get_directory_info(&active_panel.current_dir) {
+        let (file_count, total_size) = if let Ok((count, size)) =
+            cortex_core::FileSystem::get_directory_info(&active_panel.current_dir)
+        {
             (count, humansize::format_size(size, humansize::BINARY))
         } else {
             (0, "0 B".to_string())
         };
 
-        let right_text = format!(
-            "{} items | {} | F1 Help ",
-            file_count,
-            total_size
-        );
+        let right_text = format!("{} items | {} | F1 Help ", file_count, total_size);
 
         let left_width = left_text.width();
         let right_width = right_text.width();
         let padding = area.width.saturating_sub((left_width + right_width) as u16) as usize;
-        
+
         let status_line = Line::from(vec![
             Span::styled(left_text, Style::default().fg(Color::White)),
             Span::raw(" ".repeat(padding)),

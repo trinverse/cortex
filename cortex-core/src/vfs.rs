@@ -1,10 +1,10 @@
 // Temporary VFS without SSH/FTP support (to build without OpenSSL)
 
-use std::path::PathBuf;
-use std::time::SystemTime;
-use std::io::Read;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::io::Read;
+use std::path::PathBuf;
+use std::time::SystemTime;
 
 /// Virtual File System - abstraction over regular files and archive contents
 pub struct VirtualFileSystem {
@@ -25,9 +25,22 @@ pub struct VfsEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum VfsPath {
     Local(PathBuf),
-    Archive { archive_path: PathBuf, internal_path: String },
-    Sftp { host: String, port: u16, username: String, path: String },
-    Ftp { host: String, port: u16, username: String, path: String },
+    Archive {
+        archive_path: PathBuf,
+        internal_path: String,
+    },
+    Sftp {
+        host: String,
+        port: u16,
+        username: String,
+        path: String,
+    },
+    Ftp {
+        host: String,
+        port: u16,
+        username: String,
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,7 +80,7 @@ impl VirtualFileSystem {
             ],
         }
     }
-    
+
     pub fn list_entries(&self, path: &VfsPath) -> Result<Vec<VfsEntry>> {
         for provider in &self.providers {
             if provider.can_handle(path) {
@@ -76,7 +89,7 @@ impl VirtualFileSystem {
         }
         Err(anyhow::anyhow!("No provider found for path"))
     }
-    
+
     pub fn read_file(&self, path: &VfsPath) -> Result<Box<dyn Read + Send>> {
         for provider in &self.providers {
             if provider.can_handle(path) {
@@ -94,12 +107,12 @@ impl VfsProvider for LocalFileSystemProvider {
     fn can_handle(&self, path: &VfsPath) -> bool {
         matches!(path, VfsPath::Local(_))
     }
-    
+
     fn list_entries(&self, path: &VfsPath) -> Result<Vec<VfsEntry>> {
         match path {
             VfsPath::Local(local_path) => {
                 let mut entries = Vec::new();
-                
+
                 // Add parent directory entry if not at root
                 if local_path.parent().is_some() {
                     entries.push(VfsEntry {
@@ -112,12 +125,12 @@ impl VfsProvider for LocalFileSystemProvider {
                         compressed_size: None,
                     });
                 }
-                
+
                 for entry in std::fs::read_dir(local_path)? {
                     let entry = entry?;
                     let metadata = entry.metadata()?;
                     let name = entry.file_name().to_string_lossy().to_string();
-                    
+
                     entries.push(VfsEntry {
                         name,
                         path: VfsPath::Local(entry.path()),
@@ -132,38 +145,44 @@ impl VfsProvider for LocalFileSystemProvider {
                         compressed_size: None,
                     });
                 }
-                
+
                 Ok(entries)
             }
-            _ => Err(anyhow::anyhow!("LocalFileSystemProvider can only handle local paths")),
+            _ => Err(anyhow::anyhow!(
+                "LocalFileSystemProvider can only handle local paths"
+            )),
         }
     }
-    
+
     fn read_file(&self, path: &VfsPath) -> Result<Box<dyn Read + Send>> {
         match path {
             VfsPath::Local(local_path) => {
                 let file = std::fs::File::open(local_path)?;
                 Ok(Box::new(file))
             }
-            _ => Err(anyhow::anyhow!("LocalFileSystemProvider can only handle local paths")),
+            _ => Err(anyhow::anyhow!(
+                "LocalFileSystemProvider can only handle local paths"
+            )),
         }
     }
-    
+
     fn write_file(&self, _path: &VfsPath, _data: Box<dyn Read + Send>) -> Result<()> {
         // Implementation would go here
         Ok(())
     }
-    
+
     fn create_directory(&self, path: &VfsPath) -> Result<()> {
         match path {
             VfsPath::Local(local_path) => {
                 std::fs::create_dir_all(local_path)?;
                 Ok(())
             }
-            _ => Err(anyhow::anyhow!("LocalFileSystemProvider can only handle local paths")),
+            _ => Err(anyhow::anyhow!(
+                "LocalFileSystemProvider can only handle local paths"
+            )),
         }
     }
-    
+
     fn delete(&self, path: &VfsPath) -> Result<()> {
         match path {
             VfsPath::Local(local_path) => {
@@ -174,16 +193,19 @@ impl VfsProvider for LocalFileSystemProvider {
                 }
                 Ok(())
             }
-            _ => Err(anyhow::anyhow!("LocalFileSystemProvider can only handle local paths")),
+            _ => Err(anyhow::anyhow!(
+                "LocalFileSystemProvider can only handle local paths"
+            )),
         }
     }
-    
+
     fn get_info(&self, path: &VfsPath) -> Result<VfsEntry> {
         match path {
             VfsPath::Local(local_path) => {
                 let metadata = std::fs::metadata(local_path)?;
                 Ok(VfsEntry {
-                    name: local_path.file_name()
+                    name: local_path
+                        .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_default(),
                     path: path.clone(),
@@ -198,7 +220,9 @@ impl VfsProvider for LocalFileSystemProvider {
                     compressed_size: None,
                 })
             }
-            _ => Err(anyhow::anyhow!("LocalFileSystemProvider can only handle local paths")),
+            _ => Err(anyhow::anyhow!(
+                "LocalFileSystemProvider can only handle local paths"
+            )),
         }
     }
 }
@@ -218,28 +242,28 @@ impl VfsProvider for ArchiveProvider {
     fn can_handle(&self, path: &VfsPath) -> bool {
         matches!(path, VfsPath::Archive { .. })
     }
-    
+
     fn list_entries(&self, _path: &VfsPath) -> Result<Vec<VfsEntry>> {
         // Archive listing would go here
         Ok(Vec::new())
     }
-    
+
     fn read_file(&self, _path: &VfsPath) -> Result<Box<dyn Read + Send>> {
         Err(anyhow::anyhow!("Archive reading not implemented"))
     }
-    
+
     fn write_file(&self, _path: &VfsPath, _data: Box<dyn Read + Send>) -> Result<()> {
         Err(anyhow::anyhow!("Archive writing not implemented"))
     }
-    
+
     fn create_directory(&self, _path: &VfsPath) -> Result<()> {
         Err(anyhow::anyhow!("Cannot create directories in archives"))
     }
-    
+
     fn delete(&self, _path: &VfsPath) -> Result<()> {
         Err(anyhow::anyhow!("Cannot delete from archives"))
     }
-    
+
     fn get_info(&self, _path: &VfsPath) -> Result<VfsEntry> {
         Err(anyhow::anyhow!("Archive info not implemented"))
     }
@@ -256,12 +280,12 @@ impl VirtualFileSystemBuilder {
             providers: vec![Box::new(LocalFileSystemProvider)],
         }
     }
-    
+
     pub fn with_archive_provider(mut self) -> Self {
         self.providers.push(Box::new(ArchiveProvider::new()));
         self
     }
-    
+
     pub fn build(self) -> VirtualFileSystem {
         VirtualFileSystem {
             providers: self.providers,

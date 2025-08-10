@@ -17,19 +17,22 @@ impl CommandProcessor {
         let mut expanded = command.to_string();
         let active_panel = state.active_panel();
         let inactive_panel = state.inactive_panel();
-        
+
         // Get current file
-        let current_file = active_panel.current_entry()
+        let current_file = active_panel
+            .current_entry()
             .map(|e| e.name.clone())
             .unwrap_or_default();
-        
-        let current_path = active_panel.current_entry()
+
+        let current_path = active_panel
+            .current_entry()
             .map(|e| e.path.to_string_lossy().to_string())
             .unwrap_or_default();
-        
+
         // Get marked files or current file
         let marked_files = if !active_panel.marked_files.is_empty() {
-            active_panel.marked_files
+            active_panel
+                .marked_files
                 .iter()
                 .filter_map(|p| p.file_name())
                 .map(|n| n.to_string_lossy().to_string())
@@ -40,9 +43,10 @@ impl CommandProcessor {
         } else {
             String::new()
         };
-        
+
         let marked_paths = if !active_panel.marked_files.is_empty() {
-            active_panel.marked_files
+            active_panel
+                .marked_files
                 .iter()
                 .map(|p| format!("\"{}\"", p.to_string_lossy()))
                 .collect::<Vec<_>>()
@@ -52,7 +56,7 @@ impl CommandProcessor {
         } else {
             String::new()
         };
-        
+
         // Replace variables
         expanded = expanded.replace("%f", &current_file);
         expanded = expanded.replace("%F", &marked_files);
@@ -60,19 +64,19 @@ impl CommandProcessor {
         expanded = expanded.replace("%D", &inactive_panel.current_dir.to_string_lossy());
         expanded = expanded.replace("%p", &current_path);
         expanded = expanded.replace("%P", &marked_paths);
-        
+
         expanded
     }
-    
+
     pub async fn execute_command(command: &str, state: &AppState) -> Result<String> {
         let expanded = Self::expand_command(command, state);
-        
+
         // Check for built-in commands
         let parts: Vec<&str> = expanded.split_whitespace().collect();
         if parts.is_empty() {
             return Ok(String::new());
         }
-        
+
         match parts[0] {
             "cd" => {
                 // Handle cd command internally
@@ -82,12 +86,12 @@ impl CommandProcessor {
                     Ok("cd: missing argument".to_string())
                 }
             }
-            "pwd" => {
-                Ok(state.active_panel().current_dir.to_string_lossy().to_string())
-            }
-            "exit" | "quit" => {
-                Ok("exit".to_string())
-            }
+            "pwd" => Ok(state
+                .active_panel()
+                .current_dir
+                .to_string_lossy()
+                .to_string()),
+            "exit" | "quit" => Ok("exit".to_string()),
             "/monitor" => {
                 if state.is_file_monitoring_active() {
                     Ok("File monitoring is currently ENABLED".to_string())
@@ -96,23 +100,20 @@ impl CommandProcessor {
                 }
             }
             "/watch" => {
-                let watched = state.left_panel.current_dir.to_string_lossy().to_string() 
-                    + ", " + &state.right_panel.current_dir.to_string_lossy().to_string();
+                let watched = state.left_panel.current_dir.to_string_lossy().to_string()
+                    + ", "
+                    + &state.right_panel.current_dir.to_string_lossy().to_string();
                 Ok(format!("Watched directories: {}", watched))
             }
-            "/notifications" => {
-                Ok("Notifications toggle command - handled by UI".to_string())
-            }
-            "/config" => {
-                Ok("Opening configuration - handled by UI".to_string())
-            }
+            "/notifications" => Ok("Notifications toggle command - handled by UI".to_string()),
+            "/config" => Ok("Opening configuration - handled by UI".to_string()),
             _ => {
                 // Execute external command
                 Self::execute_external_command(&expanded).await
             }
         }
     }
-    
+
     async fn execute_external_command(command: &str) -> Result<String> {
         let output = if cfg!(target_os = "windows") {
             AsyncCommand::new("cmd")
@@ -125,7 +126,7 @@ impl CommandProcessor {
                 .output()
                 .await?
         };
-        
+
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).to_string())
         } else {
@@ -135,12 +136,12 @@ impl CommandProcessor {
             ))
         }
     }
-    
+
     pub fn parse_cd_path(args: &str, current_dir: &PathBuf) -> Option<PathBuf> {
         if args.is_empty() {
             return dirs::home_dir();
         }
-        
+
         let path = if args.starts_with('/') || args.starts_with('~') {
             // Absolute path or home directory
             if args.starts_with('~') {
@@ -152,7 +153,7 @@ impl CommandProcessor {
             // Relative path
             current_dir.join(args)
         };
-        
+
         if path.exists() && path.is_dir() {
             Some(path.canonicalize().ok()?)
         } else {

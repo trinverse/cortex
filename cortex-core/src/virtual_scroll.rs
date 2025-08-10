@@ -1,8 +1,8 @@
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::PathBuf;
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
 
 use crate::fs::{FileEntry, FileSystem};
 use crate::vfs::{VfsEntry, VfsPath, VirtualFileSystem};
@@ -60,7 +60,7 @@ impl VirtualScroller {
             loading_queue: Vec::new(),
         }
     }
-    
+
     /// Initialize with total item count
     pub fn init(&mut self, total_items: usize, is_vfs: bool) {
         self.total_items = total_items;
@@ -70,17 +70,17 @@ impl VirtualScroller {
         self.loading_queue.clear();
         self.update_visible_range();
     }
-    
+
     /// Set scroll position and update visible range
     pub fn set_scroll_position(&mut self, position: usize) {
         self.scroll_position = position.min(self.total_items.saturating_sub(1));
         self.update_visible_range();
-        
+
         if self.config.predictive_loading {
             self.queue_predictive_loading();
         }
     }
-    
+
     /// Scroll by a relative amount
     pub fn scroll_by(&mut self, delta: isize) {
         let new_position = if delta < 0 {
@@ -90,66 +90,66 @@ impl VirtualScroller {
         };
         self.set_scroll_position(new_position);
     }
-    
+
     /// Get the current visible range
     pub fn get_visible_range(&self) -> Range<usize> {
         self.visible_range.clone()
     }
-    
+
     /// Get items in the visible range
     pub fn get_visible_items(&self) -> Vec<Option<&FileEntry>> {
         if self.is_vfs {
             return Vec::new();
         }
-        
+
         (self.visible_range.start..self.visible_range.end)
             .map(|idx| self.loaded_items.get(&idx))
             .collect()
     }
-    
+
     /// Get VFS items in the visible range
     pub fn get_visible_vfs_items(&self) -> Vec<Option<&VfsEntry>> {
         if !self.is_vfs {
             return Vec::new();
         }
-        
+
         (self.visible_range.start..self.visible_range.end)
             .map(|idx| self.loaded_vfs_items.get(&idx))
             .collect()
     }
-    
+
     /// Load items for a specific range
     pub fn load_range(&mut self, range: Range<usize>, items: Vec<FileEntry>) {
         if self.is_vfs {
             return;
         }
-        
+
         for (offset, item) in items.into_iter().enumerate() {
             let idx = range.start + offset;
             if idx < range.end {
                 self.loaded_items.insert(idx, item);
             }
         }
-        
+
         self.cleanup_old_items();
     }
-    
+
     /// Load VFS items for a specific range
     pub fn load_vfs_range(&mut self, range: Range<usize>, items: Vec<VfsEntry>) {
         if !self.is_vfs {
             return;
         }
-        
+
         for (offset, item) in items.into_iter().enumerate() {
             let idx = range.start + offset;
             if idx < range.end {
                 self.loaded_vfs_items.insert(idx, item);
             }
         }
-        
+
         self.cleanup_old_items();
     }
-    
+
     /// Check if a range needs loading
     pub fn needs_loading(&self, range: &Range<usize>) -> bool {
         if self.is_vfs {
@@ -167,7 +167,7 @@ impl VirtualScroller {
         }
         false
     }
-    
+
     /// Get the next range that needs loading
     pub fn get_next_load_range(&mut self) -> Option<Range<usize>> {
         // First check visible range
@@ -175,46 +175,49 @@ impl VirtualScroller {
         if self.needs_loading(&visible_with_buffer) {
             return Some(self.get_batch_range(visible_with_buffer.start));
         }
-        
+
         // Then check queued ranges
         while let Some(range) = self.loading_queue.pop() {
             if self.needs_loading(&range) {
                 return Some(range);
             }
         }
-        
+
         None
     }
-    
+
     /// Update the visible range based on scroll position
     fn update_visible_range(&mut self) {
         let start = self.scroll_position;
         let end = (start + self.config.viewport_size).min(self.total_items);
         self.visible_range = start..end;
     }
-    
+
     /// Get visible range with buffer
     fn get_range_with_buffer(&self) -> Range<usize> {
-        let start = self.visible_range.start.saturating_sub(self.config.buffer_size);
+        let start = self
+            .visible_range
+            .start
+            .saturating_sub(self.config.buffer_size);
         let end = (self.visible_range.end + self.config.buffer_size).min(self.total_items);
         start..end
     }
-    
+
     /// Queue predictive loading based on scroll direction
     fn queue_predictive_loading(&mut self) {
         // Clear existing queue
         self.loading_queue.clear();
-        
+
         // Queue ranges based on likely scroll direction
         let buffer_range = self.get_range_with_buffer();
-        
+
         // Queue below current position (likely to scroll down)
         if buffer_range.end < self.total_items {
             let next_start = buffer_range.end;
             let next_end = (next_start + self.config.batch_size).min(self.total_items);
             self.loading_queue.push(next_start..next_end);
         }
-        
+
         // Queue above current position (might scroll up)
         if buffer_range.start > 0 {
             let prev_end = buffer_range.start;
@@ -222,30 +225,32 @@ impl VirtualScroller {
             self.loading_queue.push(prev_start..prev_end);
         }
     }
-    
+
     /// Get a batch range starting from an index
     fn get_batch_range(&self, start: usize) -> Range<usize> {
         let end = (start + self.config.batch_size).min(self.total_items);
         start..end
     }
-    
+
     /// Clean up items outside the buffer zone
     fn cleanup_old_items(&mut self) {
         let buffer_range = self.get_range_with_buffer();
         let extended_buffer = (buffer_range.start.saturating_sub(self.config.batch_size))
             ..(buffer_range.end + self.config.batch_size).min(self.total_items);
-        
+
         if self.is_vfs {
             if self.loaded_vfs_items.len() > self.config.max_loaded_items {
-                self.loaded_vfs_items.retain(|idx, _| extended_buffer.contains(idx));
+                self.loaded_vfs_items
+                    .retain(|idx, _| extended_buffer.contains(idx));
             }
         } else {
             if self.loaded_items.len() > self.config.max_loaded_items {
-                self.loaded_items.retain(|idx, _| extended_buffer.contains(idx));
+                self.loaded_items
+                    .retain(|idx, _| extended_buffer.contains(idx));
             }
         }
     }
-    
+
     /// Get memory usage estimate
     pub fn get_memory_usage(&self) -> usize {
         if self.is_vfs {
@@ -254,7 +259,7 @@ impl VirtualScroller {
             self.loaded_items.len() * std::mem::size_of::<FileEntry>()
         }
     }
-    
+
     /// Get loading statistics
     pub fn get_stats(&self) -> VirtualScrollStats {
         VirtualScrollStats {
@@ -300,14 +305,14 @@ impl VirtualScrollManager {
             vfs: None,
         }
     }
-    
+
     /// Initialize for a directory
     pub fn init_directory(&mut self, path: PathBuf, total_items: usize) {
         self.current_path = Some(path);
         self.current_vfs_path = None;
         self.scroller.init(total_items, false);
     }
-    
+
     /// Initialize for a VFS path
     pub fn init_vfs(&mut self, path: VfsPath, total_items: usize, vfs: VirtualFileSystem) {
         self.current_vfs_path = Some(path);
@@ -315,7 +320,7 @@ impl VirtualScrollManager {
         self.vfs = Some(vfs);
         self.scroller.init(total_items, true);
     }
-    
+
     /// Load next batch of items if needed
     pub async fn load_next_batch(&mut self) -> Result<bool> {
         if let Some(range) = self.scroller.get_next_load_range() {
@@ -348,22 +353,22 @@ impl VirtualScrollManager {
         }
         Ok(false)
     }
-    
+
     /// Scroll to a position
     pub fn scroll_to(&mut self, position: usize) {
         self.scroller.set_scroll_position(position);
     }
-    
+
     /// Get visible items
     pub fn get_visible_items(&self) -> Vec<Option<&FileEntry>> {
         self.scroller.get_visible_items()
     }
-    
+
     /// Get visible VFS items
     pub fn get_visible_vfs_items(&self) -> Vec<Option<&VfsEntry>> {
         self.scroller.get_visible_vfs_items()
     }
-    
+
     /// Get statistics
     pub fn get_stats(&self) -> VirtualScrollStats {
         self.scroller.get_stats()
@@ -373,7 +378,7 @@ impl VirtualScrollManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_virtual_scroller_basic() {
         let config = VirtualScrollConfig {
@@ -381,35 +386,35 @@ mod tests {
             buffer_size: 5,
             ..Default::default()
         };
-        
+
         let mut scroller = VirtualScroller::new(config);
         scroller.init(100, false);
-        
+
         // Check initial visible range
         assert_eq!(scroller.get_visible_range(), 0..10);
-        
+
         // Scroll down
         scroller.scroll_by(5);
         assert_eq!(scroller.get_visible_range(), 5..15);
-        
+
         // Scroll to end
         scroller.set_scroll_position(95);
         assert_eq!(scroller.get_visible_range(), 95..100);
     }
-    
+
     #[test]
     fn test_needs_loading() {
         let config = VirtualScrollConfig::default();
         let mut scroller = VirtualScroller::new(config);
         scroller.init(100, false);
-        
+
         // Initially needs loading
         assert!(scroller.needs_loading(&(0..10)));
-        
+
         // After loading, doesn't need loading
         let items = vec![]; // Would be actual items
         scroller.load_range(0..10, items);
-        
+
         // Note: This would fail without actual items, but shows the pattern
     }
 }

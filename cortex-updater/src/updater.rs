@@ -1,7 +1,7 @@
 use anyhow::Result;
+use reqwest;
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use reqwest;
 
 /// Update channel for release tracks
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -68,53 +68,56 @@ impl UpdateChecker {
             client: reqwest::Client::new(),
         }
     }
-    
+
     /// Check for available updates
     pub async fn check(&self, current_version: &Version) -> Result<UpdateInfo> {
         let manifest_url = format!("{}/manifest.json", self.update_url);
-        
+
         // Fetch update manifest
-        let response = self.client
+        let response = self
+            .client
             .get(&manifest_url)
             .header("User-Agent", format!("Cortex/{}", current_version))
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             anyhow::bail!("Failed to fetch update manifest: {}", response.status());
         }
-        
+
         let manifest: UpdateManifest = response.json().await?;
-        
+
         // Find the latest release for our channel
         let platform = Self::get_platform();
         let arch = Self::get_arch();
-        
+
         for release in manifest.releases {
             // Skip if wrong channel
             if release.channel != self.channel {
                 continue;
             }
-            
+
             let version = Version::parse(&release.version)?;
-            
+
             // Skip if not newer
             if version <= *current_version {
                 continue;
             }
-            
+
             // Check minimum version requirement
             if let Some(min_ver_str) = &release.minimum_version {
                 let min_version = Version::parse(min_ver_str)?;
                 if *current_version < min_version {
                     log::warn!(
                         "Update {} requires minimum version {}, current is {}",
-                        version, min_version, current_version
+                        version,
+                        min_version,
+                        current_version
                     );
                     continue;
                 }
             }
-            
+
             // Find platform-specific download
             for platform_info in release.platforms {
                 if platform_info.os == platform && platform_info.arch == arch {
@@ -127,17 +130,19 @@ impl UpdateChecker {
                         release_notes: release.release_notes,
                         release_date: release.release_date,
                         size: platform_info.size,
-                        minimum_version: release.minimum_version.map(|v| Version::parse(&v).unwrap()),
+                        minimum_version: release
+                            .minimum_version
+                            .map(|v| Version::parse(&v).unwrap()),
                         critical: release.critical,
                     });
                 }
             }
         }
-        
+
         // No update available
         anyhow::bail!("No update available for current platform");
     }
-    
+
     /// Get current platform identifier
     fn get_platform() -> String {
         if cfg!(target_os = "windows") {
@@ -150,7 +155,7 @@ impl UpdateChecker {
             "unknown".to_string()
         }
     }
-    
+
     /// Get current architecture
     fn get_arch() -> String {
         if cfg!(target_arch = "x86_64") {
@@ -201,7 +206,7 @@ impl MockUpdateServer {
             ],
         }
     }
-    
+
     pub fn get_latest(&self, channel: &UpdateChannel, current: &Version) -> Option<UpdateInfo> {
         self.releases
             .iter()

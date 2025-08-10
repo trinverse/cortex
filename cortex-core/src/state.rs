@@ -1,13 +1,13 @@
-use crate::fs::FileEntry;
-use crate::vfs::{VfsPath, VfsEntry, VirtualFileSystem, RemoteCredentials};
+use crate::cache::{CacheConfig, CacheRefresher, DirectoryCache};
 use crate::config::ConfigManager;
-use crate::file_monitor::{FileMonitorManager, ChangeNotification, EventCallback};
-use crate::cache::{DirectoryCache, CacheConfig, CacheRefresher};
-use cortex_plugins::{PluginManager, PluginContext};
+use crate::file_monitor::{ChangeNotification, EventCallback, FileMonitorManager};
+use crate::fs::FileEntry;
+use crate::vfs::{RemoteCredentials, VfsEntry, VfsPath, VirtualFileSystem};
 use anyhow::Result;
+use cortex_plugins::{PluginContext, PluginManager};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,7 +60,7 @@ impl PanelState {
         };
         entries.get(self.selected_index)
     }
-    
+
     pub fn current_vfs_entry(&self) -> Option<&VfsEntry> {
         let entries = if self.filter.is_some() {
             &self.filtered_vfs_entries
@@ -69,7 +69,7 @@ impl PanelState {
         };
         entries.get(self.selected_index)
     }
-    
+
     pub fn is_using_vfs(&self) -> bool {
         self.current_vfs_path.is_some()
     }
@@ -147,7 +147,7 @@ impl PanelState {
 
     pub fn update_view_offset(&mut self, window_height: usize) {
         let padding = 3;
-        
+
         if self.selected_index < self.view_offset + padding {
             self.view_offset = self.selected_index.saturating_sub(padding);
         } else if self.selected_index >= self.view_offset + window_height - padding {
@@ -162,23 +162,21 @@ impl PanelState {
             self.filtered_vfs_entries.clear();
         } else {
             self.filter = Some(filter.to_string());
-            self.filtered_entries = self.entries
+            self.filtered_entries = self
+                .entries
                 .iter()
-                .filter(|entry| {
-                    entry.name.to_lowercase().contains(&filter.to_lowercase())
-                })
+                .filter(|entry| entry.name.to_lowercase().contains(&filter.to_lowercase()))
                 .cloned()
                 .collect();
-                
-            self.filtered_vfs_entries = self.vfs_entries
+
+            self.filtered_vfs_entries = self
+                .vfs_entries
                 .iter()
-                .filter(|entry| {
-                    entry.name.to_lowercase().contains(&filter.to_lowercase())
-                })
+                .filter(|entry| entry.name.to_lowercase().contains(&filter.to_lowercase()))
                 .cloned()
                 .collect();
         }
-        
+
         // Reset selection if needed
         let len = if self.filter.is_some() {
             if self.is_using_vfs() {
@@ -193,16 +191,16 @@ impl PanelState {
                 self.entries.len()
             }
         };
-        
+
         if self.selected_index >= len && len > 0 {
             self.selected_index = len - 1;
         } else if len == 0 {
             self.selected_index = 0;
         }
-        
+
         self.view_offset = 0;
     }
-    
+
     pub fn clear_filter(&mut self) {
         self.filter = None;
         self.filtered_entries.clear();
@@ -210,7 +208,7 @@ impl PanelState {
         self.selected_index = 0;
         self.view_offset = 0;
     }
-    
+
     pub fn get_visible_entries(&self) -> &Vec<FileEntry> {
         if self.filter.is_some() {
             &self.filtered_entries
@@ -218,7 +216,7 @@ impl PanelState {
             &self.entries
         }
     }
-    
+
     pub fn get_visible_vfs_entries(&self) -> &Vec<VfsEntry> {
         if self.filter.is_some() {
             &self.filtered_vfs_entries
@@ -226,10 +224,10 @@ impl PanelState {
             &self.vfs_entries
         }
     }
-    
+
     pub fn sort_entries(&mut self) {
         use crate::fs::FileType;
-        
+
         // Sort main entries
         self.entries.sort_by(|a, b| {
             if a.name == ".." {
@@ -249,12 +247,14 @@ impl PanelState {
                     SortMode::Extension => {
                         let ext_a = a.extension.as_deref().unwrap_or("");
                         let ext_b = b.extension.as_deref().unwrap_or("");
-                        ext_a.cmp(ext_b).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                        ext_a
+                            .cmp(ext_b)
+                            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
                     }
                 },
             }
         });
-        
+
         // Also sort filtered entries if filter is active
         if self.filter.is_some() {
             self.filtered_entries.sort_by(|a, b| {
@@ -275,7 +275,9 @@ impl PanelState {
                         SortMode::Extension => {
                             let ext_a = a.extension.as_deref().unwrap_or("");
                             let ext_b = b.extension.as_deref().unwrap_or("");
-                            ext_a.cmp(ext_b).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                            ext_a
+                                .cmp(ext_b)
+                                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
                         }
                     },
                 }
@@ -306,15 +308,36 @@ pub struct AppState {
 
 #[derive(Debug, Clone)]
 pub enum FileOperation {
-    Copy { sources: Vec<PathBuf>, destination: PathBuf },
-    Move { sources: Vec<PathBuf>, destination: PathBuf },
-    Delete { targets: Vec<PathBuf> },
-    DeleteToTrash { targets: Vec<PathBuf> },
-    RestoreFromTrash { targets: Vec<PathBuf> },
-    CreateDir { path: PathBuf },
-    Rename { old_path: PathBuf, new_name: String },
-    CopyToClipboard { paths: Vec<PathBuf> },
-    PasteFromClipboard { destination: PathBuf },
+    Copy {
+        sources: Vec<PathBuf>,
+        destination: PathBuf,
+    },
+    Move {
+        sources: Vec<PathBuf>,
+        destination: PathBuf,
+    },
+    Delete {
+        targets: Vec<PathBuf>,
+    },
+    DeleteToTrash {
+        targets: Vec<PathBuf>,
+    },
+    RestoreFromTrash {
+        targets: Vec<PathBuf>,
+    },
+    CreateDir {
+        path: PathBuf,
+    },
+    Rename {
+        old_path: PathBuf,
+        new_name: String,
+    },
+    CopyToClipboard {
+        paths: Vec<PathBuf>,
+    },
+    PasteFromClipboard {
+        destination: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -328,7 +351,7 @@ impl AppState {
         let current_dir = std::env::current_dir()?;
         let config_manager = ConfigManager::new()?;
         let auto_reload_enabled = config_manager.get().general.auto_reload;
-        
+
         // Initialize directory cache with configuration
         let cache_config = CacheConfig {
             max_entries: 1000,
@@ -338,7 +361,7 @@ impl AppState {
             frequent_access_threshold: 5,
         };
         let directory_cache = Arc::new(DirectoryCache::with_config(cache_config));
-        
+
         Ok(Self {
             left_panel: PanelState::new(current_dir.clone()),
             right_panel: PanelState::new(current_dir),
@@ -395,40 +418,44 @@ impl AppState {
     pub fn clear_status_message(&mut self) {
         self.status_message = None;
     }
-    
+
     /// Navigate into archive or VFS path
     pub fn navigate_into_vfs(&mut self, vfs_path: VfsPath) -> Result<()> {
         let vfs = VirtualFileSystem::new();
-        
+
         // Add appropriate provider based on VFS path type
         match &vfs_path {
             VfsPath::Sftp { .. } => {
                 // SSH/FTP support temporarily disabled - requires OpenSSL
-                return Err(anyhow::anyhow!("SSH/SFTP connections are not available in this build"));
+                return Err(anyhow::anyhow!(
+                    "SSH/SFTP connections are not available in this build"
+                ));
             }
             VfsPath::Ftp { .. } => {
                 // SSH/FTP support temporarily disabled - requires OpenSSL
-                return Err(anyhow::anyhow!("FTP connections are not available in this build"));
+                return Err(anyhow::anyhow!(
+                    "FTP connections are not available in this build"
+                ));
             }
             _ => {}
         }
-        
+
         let vfs_entries = vfs.list_entries(&vfs_path)?;
-        
+
         let active_panel = self.active_panel_mut();
         active_panel.current_vfs_path = Some(vfs_path.clone());
         active_panel.vfs_entries = vfs_entries;
         active_panel.filtered_vfs_entries.clear();
         active_panel.selected_index = 0;
         active_panel.view_offset = 0;
-        
+
         Ok(())
     }
-    
+
     /// Navigate back to regular file system from VFS
     pub fn navigate_back_from_vfs(&mut self) -> Result<()> {
         let active_panel = self.active_panel_mut();
-        
+
         if let Some(vfs_path) = &active_panel.current_vfs_path {
             match vfs_path {
                 VfsPath::Archive { archive_path, .. } => {
@@ -439,7 +466,7 @@ impl AppState {
                     active_panel.current_vfs_path = None;
                     active_panel.vfs_entries.clear();
                     active_panel.filtered_vfs_entries.clear();
-                },
+                }
                 _ => {
                     // For other VFS types, go back to regular filesystem
                     active_panel.current_vfs_path = None;
@@ -448,21 +475,27 @@ impl AppState {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Store connection credentials for reuse
-    pub fn store_connection_credentials(&mut self, host: &str, port: u16, username: &str, credentials: RemoteCredentials) {
+    pub fn store_connection_credentials(
+        &mut self,
+        host: &str,
+        port: u16,
+        username: &str,
+        credentials: RemoteCredentials,
+    ) {
         let connection_key = format!("{}:{}@{}", username, port, host);
         self.remote_connections.insert(connection_key, credentials);
     }
-    
+
     /// Check if we can navigate into the current selection
     pub fn can_navigate_into_current(&self) -> bool {
         let _vfs = VirtualFileSystem::new();
         let active_panel = self.active_panel();
-        
+
         if active_panel.is_using_vfs() {
             // In VFS mode, check VFS entry
             if let Some(vfs_entry) = active_panel.current_vfs_entry() {
@@ -485,18 +518,20 @@ impl AppState {
             }
         }
     }
-    
+
     /// Create plugin context from current state
     pub fn create_plugin_context(&self) -> PluginContext {
         let active_panel = self.active_panel();
         let inactive_panel = self.inactive_panel();
-        
+
         let current_file = if active_panel.is_using_vfs() {
-            active_panel.current_vfs_entry().map(|entry| PathBuf::from(&entry.name))
+            active_panel
+                .current_vfs_entry()
+                .map(|entry| PathBuf::from(&entry.name))
         } else {
             active_panel.current_entry().map(|entry| entry.path.clone())
         };
-        
+
         let selected_files = if active_panel.is_using_vfs() {
             // For VFS, use marked entries (simplified for now)
             Vec::new()
@@ -508,7 +543,7 @@ impl AppState {
                 active_panel.marked_files.clone()
             }
         };
-        
+
         PluginContext {
             current_file,
             current_directory: active_panel.current_dir.clone(),
@@ -520,56 +555,68 @@ impl AppState {
             other_panel_directory: inactive_panel.current_dir.clone(),
         }
     }
-    
+
     /// Initialize the file monitor
     pub async fn init_file_monitor(&mut self) -> Result<()> {
         if self.auto_reload_enabled {
             let monitor_manager = Arc::new(FileMonitorManager::new().await?);
             monitor_manager.start().await?;
-            
+
             // Set up callback for panel refresh
             let callback: EventCallback = Arc::new(move |notification: ChangeNotification| {
-                log::debug!("File change detected: {} - {:?}", notification.path.display(), notification.event);
+                log::debug!(
+                    "File change detected: {} - {:?}",
+                    notification.path.display(),
+                    notification.event
+                );
                 // The actual panel refresh will be handled by the UI layer
             });
-            
+
             monitor_manager.register_change_callback(callback).await;
-            
+
             // Watch current directories
-            monitor_manager.watch_directory(&self.left_panel.current_dir, false).await?;
-            monitor_manager.watch_directory(&self.right_panel.current_dir, false).await?;
-            
+            monitor_manager
+                .watch_directory(&self.left_panel.current_dir, false)
+                .await?;
+            monitor_manager
+                .watch_directory(&self.right_panel.current_dir, false)
+                .await?;
+
             self.file_monitor = Some(monitor_manager);
         }
         Ok(())
     }
-    
+
     /// Update file monitoring when navigating to a new directory
-    pub async fn update_file_monitoring(&mut self, panel: ActivePanel, new_path: &PathBuf) -> Result<()> {
+    pub async fn update_file_monitoring(
+        &mut self,
+        panel: ActivePanel,
+        new_path: &PathBuf,
+    ) -> Result<()> {
         if let Some(ref monitor) = self.file_monitor {
             let old_path = match panel {
                 ActivePanel::Left => &self.left_panel.current_dir,
                 ActivePanel::Right => &self.right_panel.current_dir,
             };
-            
+
             // Unwatch old directory
             monitor.unwatch_directory(old_path).await?;
-            
+
             // Watch new directory
             monitor.watch_directory(new_path, false).await?;
         }
         Ok(())
     }
-    
+
     /// Check if file monitoring is active
     pub fn is_file_monitoring_active(&self) -> bool {
         self.file_monitor.is_some() && self.auto_reload_enabled
     }
-    
+
     /// Toggle auto-reload functionality
     pub async fn toggle_auto_reload(&mut self) -> Result<()> {
         self.auto_reload_enabled = !self.auto_reload_enabled;
-        
+
         if self.auto_reload_enabled && self.file_monitor.is_none() {
             self.init_file_monitor().await?;
         } else if !self.auto_reload_enabled && self.file_monitor.is_some() {
@@ -577,16 +624,16 @@ impl AppState {
                 monitor.stop().await?;
             }
         }
-        
+
         // Update config
         let auto_reload = self.auto_reload_enabled;
         self.config_manager.update(|config| {
             config.general.auto_reload = auto_reload;
         })?;
-        
+
         Ok(())
     }
-    
+
     /// Get watched directories for debugging/status
     pub async fn get_watched_directories(&self) -> Vec<PathBuf> {
         if let Some(ref monitor) = self.file_monitor {

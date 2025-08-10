@@ -1,3 +1,11 @@
+use crate::command_palette_dialog::CommandPaletteDialog;
+use crate::config_dialog::ConfigDialog;
+use crate::connection_dialog::ConnectionDialog;
+use crate::editor_dialog::EditorDialog;
+use crate::filter_dialog::FilterDialog;
+use crate::plugin_dialog::PluginDialog;
+use crate::search_dialog::SearchDialog;
+use crate::viewer_dialog::ViewerDialog;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -5,14 +13,6 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Wrap},
     Frame,
 };
-use crate::viewer_dialog::ViewerDialog;
-use crate::editor_dialog::EditorDialog;
-use crate::filter_dialog::FilterDialog;
-use crate::command_palette_dialog::CommandPaletteDialog;
-use crate::search_dialog::SearchDialog;
-use crate::connection_dialog::ConnectionDialog;
-use crate::plugin_dialog::PluginDialog;
-use crate::config_dialog::ConfigDialog;
 
 #[derive(Debug, Clone)]
 pub enum Dialog {
@@ -274,19 +274,19 @@ pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog) {
         Dialog::Confirm(d) => {
             let area = centered_rect(60, 20, frame.area());
             render_confirm_dialog(frame, area, d)
-        },
+        }
         Dialog::Input(d) => {
             let area = centered_rect(60, 20, frame.area());
             render_input_dialog(frame, area, d)
-        },
+        }
         Dialog::Progress(d) => {
             let area = centered_rect(60, 20, frame.area());
             render_progress_dialog(frame, area, d)
-        },
+        }
         Dialog::Error(d) => {
             let area = centered_rect(60, 20, frame.area());
             render_error_dialog(frame, area, d)
-        },
+        }
         Dialog::Help(d) => render_help_dialog(frame, d),
         Dialog::Viewer(d) => d.render(frame),
         Dialog::Editor(d) => d.render(frame),
@@ -299,34 +299,31 @@ pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog) {
         Dialog::SaveConfirm(d) => {
             let area = centered_rect(60, 20, frame.area());
             render_save_confirm_dialog(frame, area, d)
-        },
+        }
     }
 }
 
 fn render_confirm_dialog(frame: &mut Frame, area: Rect, dialog: &ConfirmDialog) {
     frame.render_widget(Clear, area);
-    
+
     let block = Block::default()
         .title(dialog.title.as_str())
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
-    
+
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(3),
-            Constraint::Length(3),
-        ])
+        .constraints([Constraint::Min(3), Constraint::Length(3)])
         .split(inner);
-    
+
     let message = Paragraph::new(dialog.message.as_str())
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: true });
     frame.render_widget(message, chunks[0]);
-    
+
     let buttons = if dialog.selected {
         Line::from(vec![
             Span::styled(" [Yes] ", Style::default().bg(Color::Blue).fg(Color::White)),
@@ -340,23 +337,22 @@ fn render_confirm_dialog(frame: &mut Frame, area: Rect, dialog: &ConfirmDialog) 
             Span::styled(" [No] ", Style::default().bg(Color::Blue).fg(Color::White)),
         ])
     };
-    
-    let buttons_paragraph = Paragraph::new(buttons)
-        .alignment(Alignment::Center);
+
+    let buttons_paragraph = Paragraph::new(buttons).alignment(Alignment::Center);
     frame.render_widget(buttons_paragraph, chunks[1]);
 }
 
 fn render_input_dialog(frame: &mut Frame, area: Rect, dialog: &InputDialog) {
     frame.render_widget(Clear, area);
-    
+
     let block = Block::default()
         .title(dialog.title.as_str())
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
-    
+
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -365,35 +361,31 @@ fn render_input_dialog(frame: &mut Frame, area: Rect, dialog: &InputDialog) {
             Constraint::Min(1),
         ])
         .split(inner);
-    
+
     let prompt = Paragraph::new(dialog.prompt.as_str());
     frame.render_widget(prompt, chunks[0]);
-    
-    let input_block = Block::default()
-        .borders(Borders::ALL);
+
+    let input_block = Block::default().borders(Borders::ALL);
     let input_inner = input_block.inner(chunks[1]);
     frame.render_widget(input_block, chunks[1]);
-    
+
     let input = Paragraph::new(dialog.value.as_str());
     frame.render_widget(input, input_inner);
-    
-    frame.set_cursor_position((
-        input_inner.x + dialog.cursor_position as u16,
-        input_inner.y,
-    ));
+
+    frame.set_cursor_position((input_inner.x + dialog.cursor_position as u16, input_inner.y));
 }
 
 fn render_progress_dialog(frame: &mut Frame, area: Rect, dialog: &ProgressDialog) {
     frame.render_widget(Clear, area);
-    
+
     let block = Block::default()
         .title(dialog.title.as_str())
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
-    
+
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -404,27 +396,23 @@ fn render_progress_dialog(frame: &mut Frame, area: Rect, dialog: &ProgressDialog
             Constraint::Min(1),
         ])
         .split(inner);
-    
+
     let operation = Paragraph::new(dialog.operation.as_str());
     frame.render_widget(operation, chunks[0]);
-    
+
     let progress = Gauge::default()
         .block(Block::default())
         .gauge_style(Style::default().fg(Color::Green))
         .percent(dialog.percentage() as u16)
         .label(format!("{}%", dialog.percentage() as u16));
     frame.render_widget(progress, chunks[1]);
-    
-    let status = Paragraph::new(format!(
-        "{} / {} bytes",
-        dialog.current, dialog.total
-    ));
+
+    let status = Paragraph::new(format!("{} / {} bytes", dialog.current, dialog.total));
     frame.render_widget(status, chunks[2]);
-    
-    let message = Paragraph::new(dialog.message.as_str())
-        .wrap(Wrap { trim: true });
+
+    let message = Paragraph::new(dialog.message.as_str()).wrap(Wrap { trim: true });
     frame.render_widget(message, chunks[3]);
-    
+
     if dialog.can_cancel {
         let cancel_hint = Paragraph::new("Press ESC to cancel")
             .alignment(Alignment::Center)
@@ -435,15 +423,15 @@ fn render_progress_dialog(frame: &mut Frame, area: Rect, dialog: &ProgressDialog
 
 fn render_error_dialog(frame: &mut Frame, area: Rect, dialog: &ErrorDialog) {
     frame.render_widget(Clear, area);
-    
+
     let block = Block::default()
         .title(dialog.title.as_str())
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD));
-    
+
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    
+
     let chunks = if dialog.details.is_some() {
         Layout::default()
             .direction(Direction::Vertical)
@@ -457,25 +445,22 @@ fn render_error_dialog(frame: &mut Frame, area: Rect, dialog: &ErrorDialog) {
     } else {
         Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(3),
-                Constraint::Length(1),
-            ])
+            .constraints([Constraint::Min(3), Constraint::Length(1)])
             .split(inner)
     };
-    
+
     let message = Paragraph::new(dialog.message.as_str())
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: true });
     frame.render_widget(message, chunks[0]);
-    
+
     if let Some(details) = &dialog.details {
         let details_widget = Paragraph::new(details.as_str())
             .wrap(Wrap { trim: true })
             .style(Style::default().fg(Color::Gray));
         frame.render_widget(details_widget, chunks[2]);
     }
-    
+
     let ok_button = Paragraph::new("[OK]")
         .alignment(Alignment::Center)
         .style(Style::default().bg(Color::Red).fg(Color::White));
@@ -484,17 +469,17 @@ fn render_error_dialog(frame: &mut Frame, area: Rect, dialog: &ErrorDialog) {
 
 fn render_save_confirm_dialog(frame: &mut Frame, area: Rect, dialog: &SaveConfirmDialog) {
     use crate::dialogs::SaveChoice;
-    
+
     frame.render_widget(Clear, area);
-    
+
     let block = Block::default()
         .title(" Save Changes ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
-    
+
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -505,21 +490,21 @@ fn render_save_confirm_dialog(frame: &mut Frame, area: Rect, dialog: &SaveConfir
         ])
         .margin(1)
         .split(inner);
-    
+
     // File name
     let filename = format!("File: {}", dialog.filename);
     let filename_widget = Paragraph::new(filename)
         .alignment(Alignment::Center)
         .style(Style::default().fg(Color::Cyan));
     frame.render_widget(filename_widget, chunks[0]);
-    
+
     // Message
     let message = "The file has been modified.\nDo you want to save changes before closing?";
     let message_widget = Paragraph::new(message)
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: true });
     frame.render_widget(message_widget, chunks[1]);
-    
+
     // Buttons
     let button_chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -529,35 +514,44 @@ fn render_save_confirm_dialog(frame: &mut Frame, area: Rect, dialog: &SaveConfir
             Constraint::Percentage(33),
         ])
         .split(chunks[3]);
-    
+
     let save_style = if dialog.selection == SaveChoice::Save {
-        Style::default().bg(Color::Green).fg(Color::Black).add_modifier(Modifier::BOLD)
+        Style::default()
+            .bg(Color::Green)
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::Green)
     };
-    
+
     let dont_save_style = if dialog.selection == SaveChoice::DontSave {
-        Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)
+        Style::default()
+            .bg(Color::Yellow)
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::Yellow)
     };
-    
+
     let cancel_style = if dialog.selection == SaveChoice::Cancel {
-        Style::default().bg(Color::Red).fg(Color::White).add_modifier(Modifier::BOLD)
+        Style::default()
+            .bg(Color::Red)
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::Red)
     };
-    
+
     let save_button = Paragraph::new("[S]ave")
         .alignment(Alignment::Center)
         .style(save_style);
     frame.render_widget(save_button, button_chunks[0]);
-    
+
     let dont_save_button = Paragraph::new("[D]on't Save")
         .alignment(Alignment::Center)
         .style(dont_save_style);
     frame.render_widget(dont_save_button, button_chunks[1]);
-    
+
     let cancel_button = Paragraph::new("[C]ancel")
         .alignment(Alignment::Center)
         .style(cancel_style);
@@ -567,35 +561,43 @@ fn render_save_confirm_dialog(frame: &mut Frame, area: Rect, dialog: &SaveConfir
 fn render_help_dialog(frame: &mut Frame, dialog: &HelpDialog) {
     let area = centered_rect(70, 80, frame.area());
     frame.render_widget(Clear, area);
-    
+
     let block = Block::default()
         .title(" Help ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
-    
+
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    
-    let items: Vec<ListItem> = dialog.items.iter().enumerate().map(|(idx, (key, desc))| {
-        if desc.is_empty() && !key.is_empty() {
-            ListItem::new(Line::from(vec![
-                Span::styled(key, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-            ]))
-        } else if key.is_empty() {
-            ListItem::new(Line::from(vec![Span::raw("")]))
-        } else {
-            let style = if idx == dialog.selected_index {
-                Style::default().bg(Color::DarkGray)
+
+    let items: Vec<ListItem> = dialog
+        .items
+        .iter()
+        .enumerate()
+        .map(|(idx, (key, desc))| {
+            if desc.is_empty() && !key.is_empty() {
+                ListItem::new(Line::from(vec![Span::styled(
+                    key,
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                )]))
+            } else if key.is_empty() {
+                ListItem::new(Line::from(vec![Span::raw("")]))
             } else {
-                Style::default()
-            };
-            ListItem::new(Line::from(vec![
-                Span::styled(format!("  {:12}", key), Style::default().fg(Color::Cyan)),
-                Span::styled(desc, style),
-            ]))
-        }
-    }).collect();
-    
+                let style = if idx == dialog.selected_index {
+                    Style::default().bg(Color::DarkGray)
+                } else {
+                    Style::default()
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!("  {:12}", key), Style::default().fg(Color::Cyan)),
+                    Span::styled(desc, style),
+                ]))
+            }
+        })
+        .collect();
+
     let list = List::new(items);
     frame.render_widget(list, inner);
 }

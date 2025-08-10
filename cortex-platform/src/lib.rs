@@ -1,9 +1,9 @@
 pub mod clipboard;
-pub mod trash;
 pub mod platform;
+pub mod trash;
 
-use std::path::Path;
 use anyhow::Result;
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Platform {
@@ -16,14 +16,14 @@ impl Platform {
     pub fn current() -> Self {
         #[cfg(target_os = "windows")]
         return Platform::Windows;
-        
+
         #[cfg(target_os = "macos")]
         return Platform::MacOS;
-        
+
         #[cfg(target_os = "linux")]
         return Platform::Linux;
     }
-    
+
     pub fn name(&self) -> &'static str {
         match self {
             Platform::Windows => "Windows",
@@ -59,10 +59,10 @@ pub struct TrashItem {
 pub fn get_trash_handler() -> Box<dyn TrashOperations> {
     #[cfg(target_os = "windows")]
     return Box::new(trash::windows::WindowsTrash::new());
-    
+
     #[cfg(target_os = "macos")]
     return Box::new(trash::macos::MacOSTrash::new());
-    
+
     #[cfg(target_os = "linux")]
     return Box::new(trash::linux::LinuxTrash::new());
 }
@@ -70,10 +70,10 @@ pub fn get_trash_handler() -> Box<dyn TrashOperations> {
 pub fn get_clipboard_handler() -> Box<dyn ClipboardOperations> {
     #[cfg(target_os = "windows")]
     return Box::new(clipboard::windows::WindowsClipboard::new());
-    
+
     #[cfg(target_os = "macos")]
     return Box::new(clipboard::macos::MacOSClipboard::new());
-    
+
     #[cfg(target_os = "linux")]
     return Box::new(clipboard::linux::LinuxClipboard::new());
 }

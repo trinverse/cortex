@@ -1,10 +1,10 @@
+use anyhow::Result;
+use regex::Regex;
+use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
-use regex::Regex;
-use std::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchCriteria {
@@ -22,10 +22,10 @@ pub struct SearchCriteria {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SearchType {
-    Wildcard,   // *.txt, file*.rs
-    Regex,      // Full regex support
-    Exact,      // Exact match
-    Contains,   // Contains substring
+    Wildcard, // *.txt, file*.rs
+    Regex,    // Full regex support
+    Exact,    // Exact match
+    Contains, // Contains substring
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,11 +57,25 @@ pub struct Match {
 
 #[derive(Debug, Clone)]
 pub enum SearchProgress {
-    Started { total_dirs: usize },
-    Searching { current_path: PathBuf, searched: usize, total: usize },
-    Found { result: SearchResult },
-    Completed { total_found: usize, elapsed_ms: u128 },
-    Error { path: PathBuf, error: String },
+    Started {
+        total_dirs: usize,
+    },
+    Searching {
+        current_path: PathBuf,
+        searched: usize,
+        total: usize,
+    },
+    Found {
+        result: SearchResult,
+    },
+    Completed {
+        total_found: usize,
+        elapsed_ms: u128,
+    },
+    Error {
+        path: PathBuf,
+        error: String,
+    },
 }
 
 pub struct SearchEngine {
@@ -87,19 +101,19 @@ impl PatternMatcher for WildcardMatcher {
         } else {
             self.pattern.to_lowercase()
         };
-        
+
         let text = if self.case_sensitive {
             text.to_string()
         } else {
             text.to_lowercase()
         };
-        
+
         // Convert wildcard to regex
         let regex_pattern = pattern
             .replace(".", r"\.")
             .replace("*", ".*")
             .replace("?", ".");
-        
+
         if let Ok(regex) = Regex::new(&format!("^{}$", regex_pattern)) {
             regex.is_match(&text)
         } else {
@@ -164,7 +178,7 @@ impl SearchEngine {
                 Box::new(RegexMatcher {
                     regex: Regex::new(&pattern)?,
                 })
-            },
+            }
             SearchType::Exact => Box::new(ExactMatcher {
                 pattern: criteria.pattern.clone(),
                 case_sensitive: criteria.case_sensitive,
@@ -174,7 +188,7 @@ impl SearchEngine {
                 case_sensitive: criteria.case_sensitive,
             }),
         };
-        
+
         Ok(Self {
             criteria,
             pattern_matcher,
@@ -182,7 +196,7 @@ impl SearchEngine {
             cancelled: false,
         })
     }
-    
+
     pub async fn search(
         &mut self,
         start_path: &Path,
@@ -191,24 +205,25 @@ impl SearchEngine {
         let start_time = std::time::Instant::now();
         self.results.clear();
         self.cancelled = false;
-        
+
         // Count total directories for progress
         let total_dirs = self.count_directories(start_path, 0)?;
         let _ = progress_sender.send(SearchProgress::Started { total_dirs });
-        
+
         // Perform search
         let mut searched = 0;
-        self.search_recursive(start_path, &progress_sender, &mut searched, total_dirs, 0).await?;
-        
+        self.search_recursive(start_path, &progress_sender, &mut searched, total_dirs, 0)
+            .await?;
+
         // Send completion
         let _ = progress_sender.send(SearchProgress::Completed {
             total_found: self.results.len(),
             elapsed_ms: start_time.elapsed().as_millis(),
         });
-        
+
         Ok(self.results.clone())
     }
-    
+
     async fn search_recursive(
         &mut self,
         path: &Path,
@@ -220,14 +235,14 @@ impl SearchEngine {
         if self.cancelled {
             return Ok(());
         }
-        
+
         // Check max depth
         if let Some(max_depth) = self.criteria.max_depth {
             if depth > max_depth {
                 return Ok(());
             }
         }
-        
+
         // Send progress
         *searched += 1;
         let _ = progress_sender.send(SearchProgress::Searching {
@@ -235,7 +250,7 @@ impl SearchEngine {
             searched: *searched,
             total,
         });
-        
+
         // Read directory
         let entries = match fs::read_dir(path) {
             Ok(entries) => entries,
@@ -247,19 +262,19 @@ impl SearchEngine {
                 return Ok(());
             }
         };
-        
+
         for entry in entries {
             let entry = match entry {
                 Ok(e) => e,
                 Err(_) => continue,
             };
-            
+
             let entry_path = entry.path();
             let metadata = match entry.metadata() {
                 Ok(m) => m,
                 Err(_) => continue,
             };
-            
+
             // Skip hidden files if requested
             if !self.criteria.include_hidden {
                 if let Some(name) = entry_path.file_name() {
@@ -268,7 +283,7 @@ impl SearchEngine {
                     }
                 }
             }
-            
+
             if metadata.is_dir() {
                 // Recursively search subdirectories
                 if self.criteria.include_subdirs {
@@ -278,7 +293,8 @@ impl SearchEngine {
                         searched,
                         total,
                         depth + 1,
-                    )).await?;
+                    ))
+                    .await?;
                 }
             } else if metadata.is_file() {
                 // Check if file matches criteria
@@ -289,24 +305,24 @@ impl SearchEngine {
                         modified: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
                         matches: Vec::new(),
                     };
-                    
+
                     // Search inside file if requested
                     if self.criteria.search_in_files {
                         self.search_in_file(&entry_path, &mut result)?;
                     }
-                    
+
                     let _ = progress_sender.send(SearchProgress::Found {
                         result: result.clone(),
                     });
-                    
+
                     self.results.push(result);
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn matches_file(&self, path: &Path, metadata: &fs::Metadata) -> Result<bool> {
         // Check filename pattern
         if let Some(filename) = path.file_name() {
@@ -315,19 +331,24 @@ impl SearchEngine {
                 return Ok(false);
             }
         }
-        
+
         // Check extensions filter
         if !self.criteria.file_extensions.is_empty() {
             if let Some(ext) = path.extension() {
                 let ext_str = ext.to_string_lossy().to_lowercase();
-                if !self.criteria.file_extensions.iter().any(|e| e.to_lowercase() == ext_str) {
+                if !self
+                    .criteria
+                    .file_extensions
+                    .iter()
+                    .any(|e| e.to_lowercase() == ext_str)
+                {
                     return Ok(false);
                 }
             } else {
                 return Ok(false);
             }
         }
-        
+
         // Check size filter
         if let Some(ref size_filter) = self.criteria.size_filter {
             let size = metadata.len();
@@ -342,7 +363,7 @@ impl SearchEngine {
                 }
             }
         }
-        
+
         // Check date filter
         if let Some(ref date_filter) = self.criteria.date_filter {
             if let Ok(modified) = metadata.modified() {
@@ -358,10 +379,10 @@ impl SearchEngine {
                 }
             }
         }
-        
+
         Ok(true)
     }
-    
+
     fn search_in_file(&self, path: &Path, result: &mut SearchResult) -> Result<()> {
         // Only search in text files
         if let Ok(content) = fs::read_to_string(path) {
@@ -377,16 +398,16 @@ impl SearchEngine {
         }
         Ok(())
     }
-    
+
     fn count_directories(&self, path: &Path, depth: usize) -> Result<usize> {
         if let Some(max_depth) = self.criteria.max_depth {
             if depth > max_depth {
                 return Ok(0);
             }
         }
-        
+
         let mut count = 1;
-        
+
         if self.criteria.include_subdirs {
             if let Ok(entries) = fs::read_dir(path) {
                 for entry in entries {
@@ -400,14 +421,14 @@ impl SearchEngine {
                 }
             }
         }
-        
+
         Ok(count)
     }
-    
+
     pub fn cancel(&mut self) {
         self.cancelled = true;
     }
-    
+
     pub fn get_results(&self) -> &[SearchResult] {
         &self.results
     }

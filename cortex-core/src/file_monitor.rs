@@ -49,16 +49,16 @@ impl FileMonitor {
     pub async fn start(&mut self) -> Result<()> {
         let sender = self.event_sender.clone();
         let callbacks = self.callbacks.clone();
-        
+
         let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
             match res {
                 Ok(event) => {
                     if let Some(monitor_event) = Self::convert_event(event) {
                         let notification = ChangeNotification {
                             path: match &monitor_event {
-                                FileMonitorEvent::Created(p) | 
-                                FileMonitorEvent::Modified(p) | 
-                                FileMonitorEvent::Deleted(p) => p.clone(),
+                                FileMonitorEvent::Created(p)
+                                | FileMonitorEvent::Modified(p)
+                                | FileMonitorEvent::Deleted(p) => p.clone(),
                                 FileMonitorEvent::Renamed { to, .. } => to.clone(),
                             },
                             event: monitor_event.clone(),
@@ -67,7 +67,7 @@ impl FileMonitor {
 
                         // Send to main event loop
                         let _ = sender.send(monitor_event);
-                        
+
                         // Call registered callbacks
                         let callbacks_clone = callbacks.clone();
                         tokio::spawn(async move {
@@ -98,9 +98,9 @@ impl FileMonitor {
             } else {
                 RecursiveMode::NonRecursive
             };
-            
+
             watcher.watch(path, mode)?;
-            
+
             let mut paths = self.watched_paths.write().await;
             paths.insert(path.to_path_buf(), recursive);
         }
@@ -110,7 +110,7 @@ impl FileMonitor {
     pub async fn unwatch_path(&mut self, path: &Path) -> Result<()> {
         if let Some(ref mut watcher) = self.watcher {
             watcher.unwatch(path)?;
-            
+
             let mut paths = self.watched_paths.write().await;
             paths.remove(path);
         }
@@ -179,10 +179,10 @@ impl FileMonitor {
         if let Some(watcher) = self.watcher.take() {
             drop(watcher);
         }
-        
+
         let mut paths = self.watched_paths.write().await;
         paths.clear();
-        
+
         Ok(())
     }
 }
@@ -205,7 +205,7 @@ pub struct FileMonitorManager {
 impl FileMonitorManager {
     pub async fn new() -> Result<Self> {
         let (monitor, event_receiver) = FileMonitor::new()?;
-        
+
         Ok(Self {
             monitor: Arc::new(RwLock::new(monitor)),
             event_receiver: Arc::new(RwLock::new(event_receiver)),
@@ -218,7 +218,7 @@ impl FileMonitorManager {
             let mut monitor = self.monitor.write().await;
             monitor.start().await?;
         }
-        
+
         {
             let mut running = self.is_running.write().await;
             *running = true;
@@ -228,10 +228,10 @@ impl FileMonitorManager {
         let _monitor_clone = self.monitor.clone();
         let receiver_clone = self.event_receiver.clone();
         let running_clone = self.is_running.clone();
-        
+
         tokio::spawn(async move {
             let mut receiver = receiver_clone.write().await;
-            
+
             while *running_clone.read().await {
                 match receiver.recv().await {
                     Some(event) => {
@@ -254,12 +254,12 @@ impl FileMonitorManager {
             let mut running = self.is_running.write().await;
             *running = false;
         }
-        
+
         {
             let mut monitor = self.monitor.write().await;
             monitor.stop().await?;
         }
-        
+
         Ok(())
     }
 

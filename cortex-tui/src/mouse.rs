@@ -26,15 +26,15 @@ impl Position {
     pub fn new(x: u16, y: u16) -> Self {
         Self { x, y }
     }
-    
+
     /// Check if position is within a rectangle
     pub fn is_within(&self, rect: &Rect) -> bool {
-        self.x >= rect.x 
+        self.x >= rect.x
             && self.x < rect.x + rect.width
-            && self.y >= rect.y 
+            && self.y >= rect.y
             && self.y < rect.y + rect.height
     }
-    
+
     /// Get relative position within a rectangle
     pub fn relative_to(&self, rect: &Rect) -> Option<Position> {
         if self.is_within(rect) {
@@ -65,34 +65,22 @@ impl MouseHandler {
             is_dragging: false,
         }
     }
-    
+
     /// Process a mouse event and return the corresponding action
     pub fn process_event(&mut self, event: MouseEvent) -> Option<MouseAction> {
         let pos = Position::new(event.column, event.row);
-        
+
         match event.kind {
-            MouseEventKind::Down(button) => {
-                self.handle_mouse_down(button, pos)
-            }
-            MouseEventKind::Up(button) => {
-                self.handle_mouse_up(button, pos)
-            }
-            MouseEventKind::Drag(button) => {
-                self.handle_mouse_drag(button, pos)
-            }
-            MouseEventKind::Moved => {
-                Some(MouseAction::Hover(pos))
-            }
-            MouseEventKind::ScrollDown => {
-                Some(MouseAction::ScrollDown(pos))
-            }
-            MouseEventKind::ScrollUp => {
-                Some(MouseAction::ScrollUp(pos))
-            }
+            MouseEventKind::Down(button) => self.handle_mouse_down(button, pos),
+            MouseEventKind::Up(button) => self.handle_mouse_up(button, pos),
+            MouseEventKind::Drag(button) => self.handle_mouse_drag(button, pos),
+            MouseEventKind::Moved => Some(MouseAction::Hover(pos)),
+            MouseEventKind::ScrollDown => Some(MouseAction::ScrollDown(pos)),
+            MouseEventKind::ScrollUp => Some(MouseAction::ScrollUp(pos)),
             _ => None,
         }
     }
-    
+
     fn handle_mouse_down(&mut self, button: MouseButton, pos: Position) -> Option<MouseAction> {
         match button {
             MouseButton::Left => {
@@ -107,7 +95,7 @@ impl MouseHandler {
             }
         }
     }
-    
+
     fn handle_mouse_up(&mut self, button: MouseButton, pos: Position) -> Option<MouseAction> {
         match button {
             MouseButton::Left => {
@@ -116,10 +104,13 @@ impl MouseHandler {
                     self.is_dragging = false;
                     if let Some(start) = self.drag_start {
                         self.drag_start = None;
-                        return Some(MouseAction::Drag { from: start, to: pos });
+                        return Some(MouseAction::Drag {
+                            from: start,
+                            to: pos,
+                        });
                     }
                 }
-                
+
                 // Check for double click
                 if let Some((last_pos, last_time)) = self.last_click {
                     if last_pos == pos && last_time.elapsed() < self.double_click_threshold {
@@ -127,34 +118,33 @@ impl MouseHandler {
                         return Some(MouseAction::DoubleClick(pos));
                     }
                 }
-                
+
                 // Single click
                 self.last_click = Some((pos, Instant::now()));
                 self.drag_start = None;
                 Some(MouseAction::Click(pos))
             }
-            MouseButton::Right => {
-                Some(MouseAction::RightClick(pos))
-            }
-            MouseButton::Middle => {
-                Some(MouseAction::MiddleClick(pos))
-            }
+            MouseButton::Right => Some(MouseAction::RightClick(pos)),
+            MouseButton::Middle => Some(MouseAction::MiddleClick(pos)),
         }
     }
-    
+
     fn handle_mouse_drag(&mut self, _button: MouseButton, pos: Position) -> Option<MouseAction> {
         if let Some(start) = self.drag_start {
             if !self.is_dragging && (pos.x != start.x || pos.y != start.y) {
                 self.is_dragging = true;
             }
-            
+
             if self.is_dragging {
-                return Some(MouseAction::Drag { from: start, to: pos });
+                return Some(MouseAction::Drag {
+                    from: start,
+                    to: pos,
+                });
             }
         }
         None
     }
-    
+
     /// Reset the handler state
     pub fn reset(&mut self) {
         self.last_click = None;
@@ -208,11 +198,11 @@ impl ContextMenu {
             visible: false,
         }
     }
-    
+
     /// Create a file context menu
     pub fn file_menu(position: Position, has_selection: bool) -> Self {
         let mut menu = Self::new(position);
-        
+
         menu.items = vec![
             ContextMenuItem {
                 label: "Open".to_string(),
@@ -281,15 +271,15 @@ impl ContextMenu {
                 shortcut: Some("Alt+Enter".to_string()),
             },
         ];
-        
+
         menu.visible = true;
         menu
     }
-    
+
     /// Create a panel context menu (right-click on empty space)
     pub fn panel_menu(position: Position) -> Self {
         let mut menu = Self::new(position);
-        
+
         menu.items = vec![
             ContextMenuItem {
                 label: "New File".to_string(),
@@ -346,11 +336,11 @@ impl ContextMenu {
                 shortcut: Some("Ctrl+R".to_string()),
             },
         ];
-        
+
         menu.visible = true;
         menu
     }
-    
+
     /// Move selection up
     pub fn move_up(&mut self) {
         if self.selected_index > 0 {
@@ -361,18 +351,20 @@ impl ContextMenu {
             }
         }
     }
-    
+
     /// Move selection down
     pub fn move_down(&mut self) {
         if self.selected_index < self.items.len() - 1 {
             self.selected_index += 1;
             // Skip separators
-            while self.selected_index < self.items.len() - 1 && !self.items[self.selected_index].enabled {
+            while self.selected_index < self.items.len() - 1
+                && !self.items[self.selected_index].enabled
+            {
                 self.selected_index += 1;
             }
         }
     }
-    
+
     /// Get the selected action
     pub fn get_selected_action(&self) -> Option<ContextMenuAction> {
         if self.items[self.selected_index].enabled {
@@ -381,24 +373,24 @@ impl ContextMenu {
             None
         }
     }
-    
+
     /// Hide the menu
     pub fn hide(&mut self) {
         self.visible = false;
     }
-    
+
     /// Calculate the required size for the menu
     pub fn calculate_size(&self) -> (u16, u16) {
-        let width = self.items.iter()
-            .map(|item| {
-                item.label.len() + 
-                item.shortcut.as_ref().map(|s| s.len() + 2).unwrap_or(0)
-            })
+        let width = self
+            .items
+            .iter()
+            .map(|item| item.label.len() + item.shortcut.as_ref().map(|s| s.len() + 2).unwrap_or(0))
             .max()
-            .unwrap_or(0) as u16 + 4; // Add padding
-        
+            .unwrap_or(0) as u16
+            + 4; // Add padding
+
         let height = self.items.len() as u16 + 2; // Add border
-        
+
         (width, height)
     }
 }
@@ -424,7 +416,7 @@ impl MouseRegion {
     pub fn new(rect: Rect, region_type: MouseRegionType) -> Self {
         Self { rect, region_type }
     }
-    
+
     /// Check if a position is within this region
     pub fn contains(&self, pos: &Position) -> bool {
         pos.is_within(&self.rect)
@@ -442,22 +434,22 @@ impl MouseRegionManager {
             regions: Vec::new(),
         }
     }
-    
+
     /// Clear all regions
     pub fn clear(&mut self) {
         self.regions.clear();
     }
-    
+
     /// Register a new region
     pub fn register(&mut self, region: MouseRegion) {
         self.regions.push(region);
     }
-    
+
     /// Find which region contains a position
     pub fn find_region(&self, pos: &Position) -> Option<&MouseRegion> {
         self.regions.iter().find(|r| r.contains(pos))
     }
-    
+
     /// Get the region type at a position
     pub fn get_region_type(&self, pos: &Position) -> Option<MouseRegionType> {
         self.find_region(pos).map(|r| r.region_type.clone())
