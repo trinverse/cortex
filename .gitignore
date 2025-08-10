@@ -39,3 +39,7 @@ Cargo.lock
 /dist/
 *.tar.gz
 *.zip
+
+# Vendored dependencies (for PPA builds)
+/vendor/
+/.cargo/config.toml

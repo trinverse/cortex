@@ -70,6 +70,21 @@ jobs:
             devscripts debhelper dput gnupg lintian \
             build-essential cargo rustc pkg-config libssl-dev
       
+      - name: Vendor Rust dependencies
+        run: |
+          # Vendor all dependencies for offline build
+          cargo vendor --versioned-dirs vendor
+          
+          # Create cargo config to use vendored deps
+          mkdir -p .cargo
+          cat > .cargo/config.toml << 'EOF'
+          [source.crates-io]
+          replace-with = "vendored-sources"
+          
+          [source.vendored-sources]
+          directory = "vendor"
+          EOF
+      
       - name: Setup GPG
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -164,7 +179,8 @@ jobs:
           	dh $@
           
           override_dh_auto_build:
-          	cargo build --release --locked
+          	# Use vendored dependencies (offline build)
+          	cargo build --release --locked --offline
           
           override_dh_auto_install:
           	install -Dm755 target/release/cortex debian/cortex/usr/bin/cortex
