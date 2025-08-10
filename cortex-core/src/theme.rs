@@ -8,6 +8,7 @@ pub enum ThemeMode {
     Light,
     Gruvbox,
     Nord,
+    Modern,
     Random,
 }
 
@@ -92,37 +93,37 @@ impl Theme {
     pub fn light() -> Self {
         Self {
             mode: ThemeMode::Light,
-            active_border: Color::Blue,
-            inactive_border: Color::Gray,
+            active_border: Color::Rgb(0, 122, 204),      // Modern blue
+            inactive_border: Color::Rgb(208, 215, 222),  // Soft gray
 
-            directory: Color::Blue,
-            symlink: Color::Cyan,
-            executable: Color::Green,
-            regular_file: Color::Black,
-            source_code: Color::Rgb(0, 128, 0),
-            document: Color::Rgb(184, 134, 11),
-            image: Color::Magenta,
-            archive: Color::Red,
-            hidden: Color::Gray,
+            directory: Color::Rgb(0, 95, 184),           // Deep blue for directories
+            symlink: Color::Rgb(0, 158, 161),            // Teal for symlinks
+            executable: Color::Rgb(34, 139, 34),         // Forest green
+            regular_file: Color::Rgb(36, 41, 47),        // Dark gray (not pure black)
+            source_code: Color::Rgb(5, 80, 174),         // Code blue
+            document: Color::Rgb(219, 109, 0),           // Document orange
+            image: Color::Rgb(149, 61, 172),             // Purple for images
+            archive: Color::Rgb(215, 58, 73),            // Modern red
+            hidden: Color::Rgb(110, 118, 129),           // Muted gray
 
-            selected_bg: Color::Rgb(200, 200, 255),
-            selected_fg: Color::Black,
-            inactive_selected_bg: Color::Rgb(230, 230, 230),
-            marked: Color::Rgb(255, 200, 0),
+            selected_bg: Color::Rgb(225, 236, 244),      // Light blue selection
+            selected_fg: Color::Rgb(36, 41, 47),         // Dark text on selection
+            inactive_selected_bg: Color::Rgb(243, 246, 248), // Very light gray
+            marked: Color::Rgb(255, 203, 107),           // Soft amber for marked
 
-            status_bar_bg: Color::Rgb(240, 240, 240),
-            status_bar_fg: Color::Black,
-            command_line_bg: Color::White,
-            command_line_fg: Color::Black,
+            status_bar_bg: Color::Rgb(246, 248, 250),    // GitHub-style light gray
+            status_bar_fg: Color::Rgb(36, 41, 47),       // Dark gray text
+            command_line_bg: Color::Rgb(255, 255, 255),  // Pure white
+            command_line_fg: Color::Rgb(36, 41, 47),     // Dark gray text
 
-            error: Color::Red,
-            warning: Color::Rgb(255, 140, 0),
-            success: Color::Green,
-            info: Color::Blue,
+            error: Color::Rgb(215, 58, 73),              // Modern red
+            warning: Color::Rgb(230, 162, 60),           // Amber warning
+            success: Color::Rgb(40, 167, 69),            // Success green
+            info: Color::Rgb(0, 122, 204),               // Info blue
 
-            normal_text: Color::Black,
-            dim_text: Color::Gray,
-            highlight_text: Color::Blue,
+            normal_text: Color::Rgb(36, 41, 47),         // Dark gray (softer than black)
+            dim_text: Color::Rgb(110, 118, 129),         // Muted gray
+            highlight_text: Color::Rgb(0, 122, 204),     // Highlight blue
         }
     }
 
@@ -200,6 +201,43 @@ impl Theme {
         }
     }
 
+    pub fn modern() -> Self {
+        Self {
+            mode: ThemeMode::Modern,
+            active_border: Color::Rgb(100, 255, 218),     // Mint accent
+            inactive_border: Color::Rgb(61, 68, 85),      // Subtle gray
+
+            directory: Color::Rgb(130, 170, 255),         // Soft blue
+            symlink: Color::Rgb(100, 255, 218),           // Mint
+            executable: Color::Rgb(134, 239, 172),        // Lime green
+            regular_file: Color::Rgb(199, 210, 254),      // Light lavender
+            source_code: Color::Rgb(129, 140, 248),       // Indigo
+            document: Color::Rgb(253, 224, 71),           // Yellow
+            image: Color::Rgb(244, 114, 182),             // Pink
+            archive: Color::Rgb(251, 146, 60),            // Orange
+            hidden: Color::Rgb(100, 116, 139),            // Slate
+
+            selected_bg: Color::Rgb(56, 58, 89),          // Deep indigo
+            selected_fg: Color::Rgb(241, 245, 249),       // Near white
+            inactive_selected_bg: Color::Rgb(39, 46, 58),
+            marked: Color::Rgb(253, 224, 71),             // Yellow
+
+            status_bar_bg: Color::Rgb(30, 33, 41),        // Very dark blue-gray
+            status_bar_fg: Color::Rgb(199, 210, 254),     // Light lavender
+            command_line_bg: Color::Rgb(24, 26, 33),      // Almost black with blue tint
+            command_line_fg: Color::Rgb(199, 210, 254),
+
+            error: Color::Rgb(248, 113, 113),             // Soft red
+            warning: Color::Rgb(251, 191, 36),            // Amber
+            success: Color::Rgb(134, 239, 172),           // Lime
+            info: Color::Rgb(100, 255, 218),              // Mint
+
+            normal_text: Color::Rgb(199, 210, 254),       // Light lavender
+            dim_text: Color::Rgb(100, 116, 139),          // Slate
+            highlight_text: Color::Rgb(100, 255, 218),    // Mint
+        }
+    }
+
     pub fn get_file_style(&self, file_type: &crate::FileType, extension: Option<&String>) -> Style {
         let color = match file_type {
             crate::FileType::Directory => self.directory,
@@ -274,6 +312,7 @@ impl ThemeManager {
             Theme::light(),
             Theme::gruvbox(),
             Theme::nord(),
+            Theme::modern(),
         ];
 
         let current_theme = match mode {
@@ -281,6 +320,7 @@ impl ThemeManager {
             ThemeMode::Light => Theme::light(),
             ThemeMode::Gruvbox => Theme::gruvbox(),
             ThemeMode::Nord => Theme::nord(),
+            ThemeMode::Modern => Theme::modern(),
             ThemeMode::Random => themes[0].clone(),
         };
 
@@ -303,6 +343,7 @@ impl ThemeManager {
             ThemeMode::Light => Theme::light(),
             ThemeMode::Gruvbox => Theme::gruvbox(),
             ThemeMode::Nord => Theme::nord(),
+            ThemeMode::Modern => Theme::modern(),
             ThemeMode::Random => {
                 self.last_rotation = Instant::now();
                 self.themes[self.current_index].clone()
