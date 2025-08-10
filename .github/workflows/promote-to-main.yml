@@ -1,0 +1,80 @@
+name: Promote to Main
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  promote:
+    name: Promote Develop to Main
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout develop branch
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Create PR from develop to main
+        id: create_pr
+        run: |
+          # Check if there are any changes to promote
+          git fetch origin main
+          CHANGES=$(git log origin/main..HEAD --oneline)
+          
+          if [ -z "$CHANGES" ]; then
+            echo "No changes to promote from develop to main"
+            exit 0
+          fi
+          
+          # Create PR body with changes
+          PR_BODY="## Changes to be released
+          
+          ### Version Bump: ${{ github.event.inputs.version_bump }}
+          
+          ### Commits included:
+          \`\`\`
+          $CHANGES
+          \`\`\`
+          
+          This PR will trigger an automatic release with a **${{ github.event.inputs.version_bump }}** version bump when merged."
+          
+          # Create the PR
+          gh pr create \
+            --base main \
+            --head develop \
+            --title "🚀 Release: Promote develop to main (${{ github.event.inputs.version_bump }} bump)" \
+            --body "$PR_BODY" \
+            --label "release,${{ github.event.inputs.version_bump }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Auto-merge PR (optional)
+        if: github.event.inputs.auto_merge == 'true'
+        run: |
+          PR_NUMBER=$(gh pr list --base main --head develop --json number -q '.[0].number')
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr merge $PR_NUMBER --auto --merge
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
