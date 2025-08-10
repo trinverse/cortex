@@ -170,8 +170,16 @@ simple_watch() {
             echo -e "${CYAN}═══════════════════════════════════════${NC}"
             echo ""
             
-            # Run Cortex
-            cargo run $BUILD_FLAGS --bin cortex
+            # Run the built binary directly and capture exit code
+            $TARGET_DIR/cortex
+            EXIT_CODE=$?
+            
+            # Check if user used /exit command (we'll use exit code 130 for this)
+            if [ $EXIT_CODE -eq 130 ] || [ $EXIT_CODE -eq 2 ]; then
+                echo ""
+                echo -e "${GREEN}Exiting development mode as requested.${NC}"
+                exit 0
+            fi
             
             echo ""
             echo -e "${YELLOW}Cortex exited. Checking for changes...${NC}"
@@ -272,7 +280,8 @@ hot_reload() {
         echo -e "${CYAN}═══════════════════════════════════════${NC}"
         echo ""
         
-        cargo run $BUILD_FLAGS --bin cortex
+        # Run the built binary directly
+        $TARGET_DIR/cortex
         
         echo ""
         echo -e "${YELLOW}Restarting with latest build...${NC}"
@@ -305,7 +314,7 @@ cargo_watch_mode() {
         --watch cortex-platform \
         --watch cortex-updater \
         --exec "build $BUILD_FLAGS" \
-        --exec "run $BUILD_FLAGS --bin cortex"
+        --shell "$TARGET_DIR/cortex"
 }
 
 # Main execution

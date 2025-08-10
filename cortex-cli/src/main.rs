@@ -863,7 +863,8 @@ impl App {
                     LeaveAlternateScreen,
                     DisableMouseCapture
                 )?;
-                std::process::exit(0);
+                // Use exit code 130 to signal intentional exit to dev.sh
+                std::process::exit(130);
             }
             "help" | "?" => {
                 self.dialog = Some(Dialog::Help(HelpDialog::new()));
@@ -2665,7 +2666,8 @@ impl App {
 
         // Force exit all spawned tasks by terminating the process
         // This ensures no background tasks keep running
-        std::process::exit(0);
+        // Use exit code 130 to signal intentional exit to dev.sh
+        std::process::exit(130);
     }
 }
 

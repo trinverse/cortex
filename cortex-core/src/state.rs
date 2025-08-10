@@ -389,12 +389,61 @@ impl AppState {
             auto_reload_enabled,
             directory_cache,
             cache_refresher: None,
-            theme_manager: crate::ThemeManager::new(crate::ThemeMode::Dark),
+            theme_manager: crate::ThemeManager::new(Self::detect_initial_theme()),
             command_output: VecDeque::new(),
             command_output_visible: false,
             command_running: false,
             command_output_height: 10, // Default height for command output area
         })
+    }
+
+    fn detect_initial_theme() -> crate::ThemeMode {
+        // Check environment variables that might indicate theme preference
+        if let Ok(theme) = std::env::var("CORTEX_THEME") {
+            match theme.to_lowercase().as_str() {
+                "dark" => return crate::ThemeMode::Dark,
+                "light" => return crate::ThemeMode::Light,
+                "gruvbox" => return crate::ThemeMode::Gruvbox,
+                "nord" => return crate::ThemeMode::Nord,
+                "modern" => return crate::ThemeMode::Modern,
+                _ => {}
+            }
+        }
+        
+        // Check terminal background - many terminals set COLORFGBG
+        if let Ok(colorfgbg) = std::env::var("COLORFGBG") {
+            // Format is typically "foreground;background" like "0;15" or "15;0"
+            if let Some(bg) = colorfgbg.split(';').nth(1) {
+                if let Ok(bg_num) = bg.parse::<u8>() {
+                    // Terminal colors: 0-7 are dark, 8-15 are bright
+                    // Background 15 (white) or 7 (light gray) suggests light terminal
+                    if bg_num >= 7 {
+                        return crate::ThemeMode::Light;
+                    }
+                }
+            }
+        }
+        
+        // Check macOS appearance
+        #[cfg(target_os = "macos")]
+        {
+            if let Ok(output) = std::process::Command::new("defaults")
+                .args(&["read", "-g", "AppleInterfaceStyle"])
+                .output()
+            {
+                let result = String::from_utf8_lossy(&output.stdout);
+                if !result.contains("Dark") {
+                    // If not dark mode or command fails, assume light
+                    return crate::ThemeMode::Light;
+                }
+            } else {
+                // If command fails, likely means Light mode (Dark is explicit)
+                return crate::ThemeMode::Light;
+            }
+        }
+        
+        // Default to Light theme since your terminal appears to be light
+        crate::ThemeMode::Light
     }
 
     pub fn active_panel(&self) -> &PanelState {
