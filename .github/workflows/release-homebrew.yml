@@ -285,7 +285,7 @@ jobs:
       # Create PR to Homebrew tap repository
       - name: Create Pull Request to Homebrew Tap
         if: secrets.HOMEBREW_TAP_TOKEN != ''
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           push-to-fork: trinverse/homebrew-cortex
