@@ -119,7 +119,7 @@ jobs:
             echo "12" > debian/compat
             
             # Create debian/control
-            cat > debian/control << 'EOF'
+            cat > debian/control << 'CONTROL_EOF'
 Source: cortex
 Section: utils
 Priority: optional
@@ -135,14 +135,14 @@ Vcs-Git: https://github.com/trinverse/cortex.git
 
 Package: cortex
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: \${shlibs:Depends}, \${misc:Depends}
 Description: Modern terminal file manager
  Cortex is a powerful terminal file manager written in Rust.
  Features dual-pane interface, vim-style navigation, and plugin support.
-EOF
+CONTROL_EOF
             
             # Create debian/rules
-            cat > debian/rules << 'EOF'
+            cat > debian/rules << 'RULES_EOF'
 #!/usr/bin/make -f
 
 export DH_VERBOSE = 1
@@ -163,21 +163,21 @@ override_dh_auto_test:
 override_dh_auto_clean:
 	cargo clean
 	dh_auto_clean
-EOF
+RULES_EOF
             chmod +x debian/rules
             
             # Create debian/changelog
-            cat > debian/changelog << EOF
+            cat > debian/changelog << CHANGELOG_EOF
 cortex (${FULL_VERSION}) ${DIST}; urgency=medium
 
   * Release version ${VERSION} for Ubuntu ${DIST}
   * Full feature set including dual-pane interface and plugin system
 
  -- ${DEBFULLNAME} <${DEBEMAIL}>  $(date -R)
-EOF
+CHANGELOG_EOF
             
             # Create debian/copyright
-            cat > debian/copyright << 'EOF'
+            cat > debian/copyright << 'COPYRIGHT_EOF'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: cortex
 Source: https://github.com/trinverse/cortex
@@ -198,7 +198,7 @@ License: MIT
  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
  OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-EOF
+COPYRIGHT_EOF
             
             # Build source package
             echo "Building source package..."
@@ -210,14 +210,14 @@ EOF
               <<< "$GPG_PASSPHRASE"
             
             # Configure dput
-            cat > ~/.dput.cf << EOF
+            cat > ~/.dput.cf << DPUT_EOF
 [cortex-ppa]
 fqdn = ppa.launchpad.net
 method = ftp
 incoming = ~${LAUNCHPAD_USERNAME}/ubuntu/cortex
 login = anonymous
 allow_unsigned_uploads = 0
-EOF
+DPUT_EOF
             
             # Upload to PPA
             cd "$BUILD_DIR"
