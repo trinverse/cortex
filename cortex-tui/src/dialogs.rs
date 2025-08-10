@@ -205,6 +205,12 @@ pub struct HelpDialog {
     pub selected_index: usize,
 }
 
+impl Default for HelpDialog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HelpDialog {
     pub fn new() -> Self {
         let items = vec![

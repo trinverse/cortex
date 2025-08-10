@@ -70,35 +70,33 @@ impl UI {
             } else {
                 format!(" {} [Filter: {}] ", panel.current_dir.display(), filter)
             }
-        } else {
-            if panel.is_using_vfs() {
-                if let Some(ref vfs_path) = panel.current_vfs_path {
-                    match vfs_path {
-                        cortex_core::VfsPath::Archive { .. } => format!(" [Archive] "),
-                        cortex_core::VfsPath::Sftp {
-                            host,
-                            username,
-                            path,
-                            ..
-                        } => {
-                            format!(" [SFTP: {}@{}:{}] ", username, host, path)
-                        }
-                        cortex_core::VfsPath::Ftp {
-                            host,
-                            username,
-                            path,
-                            ..
-                        } => {
-                            format!(" [FTP: {}@{}:{}] ", username, host, path)
-                        }
-                        _ => format!(" [Remote] "),
+        } else if panel.is_using_vfs() {
+            if let Some(ref vfs_path) = panel.current_vfs_path {
+                match vfs_path {
+                    cortex_core::VfsPath::Archive { .. } => " [Archive] ".to_string(),
+                    cortex_core::VfsPath::Sftp {
+                        host,
+                        username,
+                        path,
+                        ..
+                    } => {
+                        format!(" [SFTP: {}@{}:{}] ", username, host, path)
                     }
-                } else {
-                    format!(" [Archive] ")
+                    cortex_core::VfsPath::Ftp {
+                        host,
+                        username,
+                        path,
+                        ..
+                    } => {
+                        format!(" [FTP: {}@{}:{}] ", username, host, path)
+                    }
+                    _ => " [Remote] ".to_string(),
                 }
             } else {
-                format!(" {} ", panel.current_dir.display())
+                " [Archive] ".to_string()
             }
+        } else {
+            format!(" {} ", panel.current_dir.display())
         };
         let block = Block::default()
             .title(title)
@@ -233,7 +231,7 @@ impl UI {
             VfsEntryType::Symlink => style.fg(theme.symlink),
             VfsEntryType::File => {
                 // Try to infer type from extension
-                let extension = entry.name.split('.').last().map(String::from);
+                let extension = entry.name.split('.').next_back().map(String::from);
                 if let Some(ext) = extension.as_ref() {
                     match ext.to_lowercase().as_str() {
                         "rs" | "go" | "py" | "js" | "ts" | "java" | "c" | "cpp" | "h" => {

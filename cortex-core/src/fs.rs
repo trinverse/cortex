@@ -59,8 +59,7 @@ impl FileEntry {
             .modified()
             .ok()
             .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-            .map(|d| DateTime::<Utc>::from_timestamp(d.as_secs() as i64, 0))
-            .flatten();
+            .and_then(|d| DateTime::<Utc>::from_timestamp(d.as_secs() as i64, 0));
 
         let permissions = format_permissions(&metadata);
         let is_hidden = name.starts_with('.');

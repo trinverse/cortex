@@ -464,24 +464,32 @@ impl App {
                 let command = self.state.command_line.clone();
 
                 // Check for special / commands
-                if command.starts_with("/") {
-                    self.handle_special_command(&command[1..]).await?;
+                if let Some(cmd) = command.strip_prefix("/") {
+                    self.handle_special_command(cmd).await?;
                 } else {
                     // Add to history
                     self.state.command_history.push(command.clone());
 
                     // Check for cd command
-                    if command.starts_with("cd ") {
-                        let path = &command[3..].trim();
+                    if let Some(path_str) = command.strip_prefix("cd ") {
+                        let path = path_str.trim();
                         if let Some(new_dir) = CommandProcessor::parse_cd_path(
                             path,
                             &self.state.active_panel().current_dir,
                         ) {
+                            // Update file monitoring if enabled
+                            if self.state.is_file_monitoring_active() {
+                                let active = self.state.active_panel;
+                                self.state.update_file_monitoring(active, &new_dir).await?;
+                            }
+                            
                             let panel = self.state.active_panel_mut();
-                            panel.current_dir = new_dir;
+                            panel.current_dir = new_dir.clone();
                             panel.selected_index = 0;
                             panel.view_offset = 0;
                             Self::refresh_panel(panel)?;
+                            
+                            self.state.set_status_message(format!("Changed directory to: {}", new_dir.display()));
                         } else {
                             self.state.set_status_message(format!(
                                 "cd: cannot access '{}': No such directory",
@@ -581,7 +589,7 @@ impl App {
             (KeyCode::F(9), _) => {
                 // Cycle through themes
                 self.state.theme_manager.next_theme();
-                self.state.set_status_message(&format!(
+                self.state.set_status_message(format!(
                     "Theme changed to: {:?}",
                     self.state.theme_manager.get_current_theme().mode
                 ));
@@ -1341,11 +1349,7 @@ impl App {
                         if let Some(cmd) = dialog.get_selected_command() {
                             self.dialog = None;
                             // Remove the leading /
-                            let command = if cmd.starts_with('/') {
-                                &cmd[1..]
-                            } else {
-                                &cmd
-                            };
+                            let command = cmd.strip_prefix('/').unwrap_or(&cmd);
                             self.handle_special_command(command).await?;
                         }
                     }
@@ -1420,17 +1424,14 @@ impl App {
                     }
                     SearchState::Searching => {
                         // Handle search in progress
-                        match key.code {
-                            KeyCode::Esc => {
-                                // Cancel search
-                                self.search_rx = None; // Drop the receiver to stop processing
-                                dialog.state = SearchState::Results; // Show results collected so far
-                                self.state.set_status_message(format!(
-                                    "Search cancelled: {} results found",
-                                    dialog.results.len()
-                                ));
-                            }
-                            _ => {}
+                        if key.code == KeyCode::Esc {
+                            // Cancel search
+                            self.search_rx = None; // Drop the receiver to stop processing
+                            dialog.state = SearchState::Results; // Show results collected so far
+                            self.state.set_status_message(format!(
+                                "Search cancelled: {} results found",
+                                dialog.results.len()
+                            ));
                         }
                     }
                     SearchState::Results => {

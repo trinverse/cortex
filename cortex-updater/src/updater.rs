@@ -175,6 +175,12 @@ pub struct MockUpdateServer {
     releases: Vec<UpdateInfo>,
 }
 
+impl Default for MockUpdateServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockUpdateServer {
     pub fn new() -> Self {
         Self {

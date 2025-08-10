@@ -71,6 +71,12 @@ pub trait VfsProvider: Send + Sync {
     fn get_info(&self, path: &VfsPath) -> Result<VfsEntry>;
 }
 
+impl Default for VirtualFileSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VirtualFileSystem {
     pub fn new() -> Self {
         Self {
@@ -232,6 +238,12 @@ pub struct ArchiveProvider {
     // Archive handling would go here
 }
 
+impl Default for ArchiveProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ArchiveProvider {
     pub fn new() -> Self {
         Self {}
@@ -272,6 +284,12 @@ impl VfsProvider for ArchiveProvider {
 /// Builder for VirtualFileSystem
 pub struct VirtualFileSystemBuilder {
     providers: Vec<Box<dyn VfsProvider>>,
+}
+
+impl Default for VirtualFileSystemBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl VirtualFileSystemBuilder {

@@ -84,7 +84,7 @@ impl VirtualScroller {
     /// Scroll by a relative amount
     pub fn scroll_by(&mut self, delta: isize) {
         let new_position = if delta < 0 {
-            self.scroll_position.saturating_sub(delta.abs() as usize)
+            self.scroll_position.saturating_sub(delta.unsigned_abs())
         } else {
             (self.scroll_position + delta as usize).min(self.total_items.saturating_sub(1))
         };
@@ -243,11 +243,9 @@ impl VirtualScroller {
                 self.loaded_vfs_items
                     .retain(|idx, _| extended_buffer.contains(idx));
             }
-        } else {
-            if self.loaded_items.len() > self.config.max_loaded_items {
-                self.loaded_items
-                    .retain(|idx, _| extended_buffer.contains(idx));
-            }
+        } else if self.loaded_items.len() > self.config.max_loaded_items {
+            self.loaded_items
+                .retain(|idx, _| extended_buffer.contains(idx));
         }
     }
 

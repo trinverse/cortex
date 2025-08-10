@@ -1,6 +1,6 @@
 use anyhow::Result;
 use cortex_core::AppState;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::process::Command as AsyncCommand;
 
 pub struct CommandProcessor;
@@ -78,14 +78,6 @@ impl CommandProcessor {
         }
 
         match parts[0] {
-            "cd" => {
-                // Handle cd command internally
-                if parts.len() > 1 {
-                    Ok(format!("cd: {}", parts[1]))
-                } else {
-                    Ok("cd: missing argument".to_string())
-                }
-            }
             "pwd" => Ok(state
                 .active_panel()
                 .current_dir
@@ -102,7 +94,7 @@ impl CommandProcessor {
             "/watch" => {
                 let watched = state.left_panel.current_dir.to_string_lossy().to_string()
                     + ", "
-                    + &state.right_panel.current_dir.to_string_lossy().to_string();
+                    + state.right_panel.current_dir.to_string_lossy().as_ref();
                 Ok(format!("Watched directories: {}", watched))
             }
             "/notifications" => Ok("Notifications toggle command - handled by UI".to_string()),
@@ -137,7 +129,7 @@ impl CommandProcessor {
         }
     }
 
-    pub fn parse_cd_path(args: &str, current_dir: &PathBuf) -> Option<PathBuf> {
+    pub fn parse_cd_path(args: &str, current_dir: &Path) -> Option<PathBuf> {
         if args.is_empty() {
             return dirs::home_dir();
         }

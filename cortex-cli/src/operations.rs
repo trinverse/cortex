@@ -32,7 +32,7 @@ impl OperationManager {
             self.handler.execute(op, tx).await?;
 
             // Drain any remaining progress messages
-            while let Ok(_) = rx.try_recv() {}
+            while rx.try_recv().is_ok() {}
         }
 
         Ok(())
@@ -52,7 +52,7 @@ impl OperationManager {
             self.handler.execute(op, tx).await?;
 
             // Drain any remaining progress messages
-            while let Ok(_) = rx.try_recv() {}
+            while rx.try_recv().is_ok() {}
         }
 
         Ok(())

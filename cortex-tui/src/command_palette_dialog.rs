@@ -23,6 +23,12 @@ pub struct CommandInfo {
     pub category: String,
 }
 
+impl Default for CommandPaletteDialog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CommandPaletteDialog {
     pub fn new() -> Self {
         let all_commands = Self::get_all_commands();
@@ -235,9 +241,8 @@ impl CommandPaletteDialog {
         if query == "/" {
             // Show all commands
             self.filtered_commands = self.all_commands.clone();
-        } else if query.starts_with('/') {
+        } else if let Some(search) = query.strip_prefix('/') {
             // Filter based on text after /
-            let search = &query[1..];
             self.filtered_commands = self
                 .all_commands
                 .iter()

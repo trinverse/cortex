@@ -76,6 +76,12 @@ pub struct CacheStatistics {
     pub current_memory_usage: u64,
 }
 
+impl Default for DirectoryCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DirectoryCache {
     /// Create a new directory cache with default configuration
     pub fn new() -> Self {

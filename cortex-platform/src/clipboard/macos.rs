@@ -7,11 +7,13 @@ use objc::{class, msg_send, sel, sel_impl};
 use objc_foundation::{INSString, NSString};
 use std::path::Path;
 
+#[derive(Default)]
 pub struct MacOSClipboard {}
+
 
 impl MacOSClipboard {
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 }
 

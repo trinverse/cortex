@@ -278,7 +278,7 @@ impl TextEditor {
         if let Some(term) = &self.search_term.clone() {
             // Move cursor forward to search for next occurrence
             self.move_cursor_right();
-            self.search(&term)
+            self.search(term)
         } else {
             None
         }
@@ -292,12 +292,10 @@ impl TextEditor {
                 *line = line.replace(search, replace);
             }
             self.modified = true;
-        } else {
-            if let Some((row, col)) = self.search(search) {
-                let line = &mut self.lines[row];
-                line.replace_range(col..col + search.len(), replace);
-                self.modified = true;
-            }
+        } else if let Some((row, col)) = self.search(search) {
+            let line = &mut self.lines[row];
+            line.replace_range(col..col + search.len(), replace);
+            self.modified = true;
         }
     }
 

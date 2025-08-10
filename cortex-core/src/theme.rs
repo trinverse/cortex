@@ -308,12 +308,10 @@ impl ThemeManager {
     }
     
     pub fn update(&mut self) {
-        if self.current_theme.mode == ThemeMode::Random {
-            if self.last_rotation.elapsed() >= self.rotation_interval {
-                self.current_index = (self.current_index + 1) % self.themes.len();
-                self.current_theme = self.themes[self.current_index].clone();
-                self.last_rotation = Instant::now();
-            }
+        if self.current_theme.mode == ThemeMode::Random && self.last_rotation.elapsed() >= self.rotation_interval {
+            self.current_index = (self.current_index + 1) % self.themes.len();
+            self.current_theme = self.themes[self.current_index].clone();
+            self.last_rotation = Instant::now();
         }
     }
     
