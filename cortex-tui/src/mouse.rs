@@ -56,6 +56,12 @@ pub struct MouseHandler {
     is_dragging: bool,
 }
 
+impl Default for MouseHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MouseHandler {
     pub fn new() -> Self {
         Self {
@@ -426,6 +432,12 @@ impl MouseRegion {
 /// Mouse region manager for tracking UI regions
 pub struct MouseRegionManager {
     regions: Vec<MouseRegion>,
+}
+
+impl Default for MouseRegionManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MouseRegionManager {

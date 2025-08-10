@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Config {
     #[serde(default)]
     pub general: GeneralConfig,
@@ -67,6 +68,7 @@ pub struct ColorConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct KeybindingConfig {
     #[serde(default)]
     pub custom: Vec<CustomKeybinding>,
@@ -104,18 +106,6 @@ pub struct CustomKeybinding {
     pub command: String,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            panels: PanelConfig::default(),
-            colors: ColorConfig::default(),
-            keybindings: KeybindingConfig::default(),
-            plugins: PluginConfig::default(),
-            network: NetworkConfig::default(),
-        }
-    }
-}
 
 impl Default for GeneralConfig {
     fn default() -> Self {
@@ -155,11 +145,6 @@ impl Default for ColorConfig {
     }
 }
 
-impl Default for KeybindingConfig {
-    fn default() -> Self {
-        Self { custom: Vec::new() }
-    }
-}
 
 impl Default for PluginConfig {
     fn default() -> Self {

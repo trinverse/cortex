@@ -7,7 +7,7 @@ use anyhow::Result;
 use cortex_plugins::{PluginContext, PluginManager};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,12 +184,10 @@ impl PanelState {
             } else {
                 self.filtered_entries.len()
             }
+        } else if self.is_using_vfs() {
+            self.vfs_entries.len()
         } else {
-            if self.is_using_vfs() {
-                self.vfs_entries.len()
-            } else {
-                self.entries.len()
-            }
+            self.entries.len()
         };
 
         if self.selected_index >= len && len > 0 {
@@ -304,6 +302,7 @@ pub struct AppState {
     pub auto_reload_enabled: bool,
     pub directory_cache: Arc<DirectoryCache>,
     pub cache_refresher: Option<Arc<CacheRefresher>>,
+    pub theme_manager: crate::ThemeManager,
 }
 
 #[derive(Debug, Clone)]
@@ -380,6 +379,7 @@ impl AppState {
             auto_reload_enabled,
             directory_cache,
             cache_refresher: None,
+            theme_manager: crate::ThemeManager::new(crate::ThemeMode::Dark),
         })
     }
 
@@ -535,13 +535,11 @@ impl AppState {
         let selected_files = if active_panel.is_using_vfs() {
             // For VFS, use marked entries (simplified for now)
             Vec::new()
+        } else if active_panel.marked_files.is_empty() {
+            // If no files marked, use current file
+            current_file.clone().into_iter().collect()
         } else {
-            if active_panel.marked_files.is_empty() {
-                // If no files marked, use current file
-                current_file.clone().into_iter().collect()
-            } else {
-                active_panel.marked_files.clone()
-            }
+            active_panel.marked_files.clone()
         };
 
         PluginContext {
@@ -591,7 +589,7 @@ impl AppState {
     pub async fn update_file_monitoring(
         &mut self,
         panel: ActivePanel,
-        new_path: &PathBuf,
+        new_path: &Path,
     ) -> Result<()> {
         if let Some(ref monitor) = self.file_monitor {
             let old_path = match panel {

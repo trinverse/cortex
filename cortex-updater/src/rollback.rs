@@ -165,6 +165,7 @@ impl RollbackManager {
     }
 
     /// Copy a directory recursively
+    #[allow(clippy::only_used_in_recursion)]
     fn copy_directory(&self, src: &Path, dst: &Path) -> Result<()> {
         fs::create_dir_all(dst)?;
 

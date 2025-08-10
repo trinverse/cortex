@@ -361,17 +361,16 @@ impl LuaPlugin {
     }
 }
 
+#[derive(Default)]
 pub struct PluginManager {
     plugins: Vec<Box<dyn Plugin>>,
     plugin_commands: HashMap<String, String>, // command -> plugin_name
 }
 
+
 impl PluginManager {
     pub fn new() -> Self {
-        Self {
-            plugins: Vec::new(),
-            plugin_commands: HashMap::new(),
-        }
+        Self::default()
     }
 
     pub async fn load_plugin(&mut self, plugin: Box<dyn Plugin>) -> Result<()> {

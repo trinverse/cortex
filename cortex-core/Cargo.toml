@@ -6,6 +6,9 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 tokio = { workspace = true }
 async-trait = { workspace = true }
@@ -32,6 +35,7 @@ sevenz-rust = { workspace = true }
 cortex-plugins = { path = "../cortex-plugins" }
 cortex-platform = { path = "../cortex-platform" }
 crossterm = { workspace = true }
+ratatui = { workspace = true }
 
 # [features]
 # default = []

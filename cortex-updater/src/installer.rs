@@ -10,6 +10,12 @@ pub struct Installer {
     install_dir: PathBuf,
 }
 
+impl Default for Installer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Installer {
     pub fn new() -> Self {
         Self {
