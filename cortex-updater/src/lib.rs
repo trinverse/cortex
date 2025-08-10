@@ -67,7 +67,7 @@ impl AutoUpdater {
     /// Create a new auto-updater instance
     pub fn new(config: UpdateConfig, current_version: Version) -> Result<Self> {
         let update_dir = Self::get_update_directory()?;
-        fs::create_dir_all(&update_dir)?;
+        fs::create_dir_all(update_dir.clone())?;
 
         let rollback_manager = RollbackManager::new(&update_dir)?;
 

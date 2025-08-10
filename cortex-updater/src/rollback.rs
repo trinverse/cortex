@@ -21,7 +21,7 @@ pub struct RollbackManager {
 impl RollbackManager {
     pub fn new(update_dir: &Path) -> Result<Self> {
         let backup_dir = update_dir.join("backups");
-        fs::create_dir_all(&backup_dir)?;
+        fs::create_dir_all(backup_dir.clone())?;
 
         Ok(Self {
             backup_dir,

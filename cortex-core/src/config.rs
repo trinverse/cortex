@@ -221,7 +221,7 @@ impl ConfigManager {
 
         let cortex_config_dir = config_dir.join("cortex");
         if !cortex_config_dir.exists() {
-            fs::create_dir_all(&cortex_config_dir)?;
+            fs::create_dir_all(cortex_config_dir.clone())?;
         }
 
         Ok(cortex_config_dir.join("config.toml"))
