@@ -1,10 +1,10 @@
 use std::path::Path;
 use anyhow::Result;
 use crate::{TrashOperations, TrashItem};
-use objc::{msg_send, sel, sel_impl};
-use objc::runtime::{Object, YES, NO};
+use objc::{class, msg_send, sel, sel_impl};
+use objc::runtime::Object;
 use objc_foundation::{NSString, INSString};
-use cocoa::foundation::{NSAutoreleasePool, NSURL};
+use cocoa::foundation::NSAutoreleasePool;
 
 pub struct MacOSTrash {}
 
@@ -24,14 +24,14 @@ impl TrashOperations for MacOSTrash {
             let url: *mut Object = msg_send![class!(NSURL), fileURLWithPath: path_str];
             
             let mut error: *mut Object = std::ptr::null_mut();
-            let result: YES = msg_send![
+            let result: bool = msg_send![
                 file_manager,
                 trashItemAtURL: url
                 resultingItemURL: std::ptr::null_mut::<*mut Object>()
                 error: &mut error
             ];
             
-            if result != YES {
+            if !result {
                 return Err(anyhow::anyhow!("Failed to move item to trash"));
             }
             

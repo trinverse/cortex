@@ -1,9 +1,9 @@
 use std::path::Path;
-use anyhow::{Result, Context};
+use anyhow::Result;
 use crate::ClipboardOperations;
-use objc::{msg_send, sel, sel_impl};
+use objc::{class, msg_send, sel, sel_impl};
 use objc::runtime::Object;
-use objc_foundation::{NSString, INSString, NSArray, INSArray};
+use objc_foundation::{NSString, INSString};
 use cocoa::appkit::{NSPasteboard, NSPasteboardTypeString};
 use cocoa::foundation::NSAutoreleasePool;
 
@@ -52,7 +52,8 @@ impl ClipboardOperations for MacOSClipboard {
                 return Err(anyhow::anyhow!("No text data in clipboard"));
             }
             
-            let text = NSString::from_ptr(ns_string).as_str().to_string();
+            let ns_string_ref: &NSString = &*(ns_string as *const NSString);
+            let text = ns_string_ref.as_str().to_string();
             Ok(text)
         }
     }
@@ -72,7 +73,8 @@ impl ClipboardOperations for MacOSClipboard {
                 })
                 .collect();
             
-            let ns_array = NSArray::from_vec(file_urls);
+            // Create NSArray directly from pointers
+            let ns_array: *mut Object = msg_send![class!(NSArray), arrayWithObjects:file_urls.as_ptr() count:file_urls.len()];
             let success: bool = msg_send![
                 pasteboard,
                 writeObjects: ns_array
@@ -91,11 +93,15 @@ impl ClipboardOperations for MacOSClipboard {
             let _pool = NSAutoreleasePool::new(std::ptr::null_mut());
             
             let pasteboard = NSPasteboard::generalPasteboard(std::ptr::null_mut());
-            let file_url_type = NSString::from_str("public.file-url");
+            let _file_url_type = NSString::from_str("public.file-url");
+            
+            // Create an NSArray with NSURL class
+            let url_class = class!(NSURL);
+            let classes_array: *mut Object = msg_send![class!(NSArray), arrayWithObject:url_class];
             
             let urls: *mut Object = msg_send![
                 pasteboard,
-                readObjectsForClasses: NSArray::from_vec(vec![class!(NSURL)])
+                readObjectsForClasses: classes_array
                 options: std::ptr::null::<Object>()
             ];
             
@@ -103,15 +109,16 @@ impl ClipboardOperations for MacOSClipboard {
                 return Ok(Vec::new());
             }
             
-            let ns_array = NSArray::from_ptr(urls);
-            let count = ns_array.count();
+            // Work with NSArray directly via messages
+            let count: usize = msg_send![urls, count];
             let mut paths = Vec::new();
             
             for i in 0..count {
-                let url = ns_array.object_at(i);
+                let url: *mut Object = msg_send![urls, objectAtIndex:i];
                 let path: *mut Object = msg_send![url, path];
                 if !path.is_null() {
-                    let path_str = NSString::from_ptr(path).as_str().to_string();
+                    let path_ref: &NSString = &*(path as *const NSString);
+                    let path_str = path_ref.as_str().to_string();
                     paths.push(path_str);
                 }
             }
