@@ -13,18 +13,33 @@ pub struct UI;
 
 impl UI {
     pub fn draw(frame: &mut Frame, app: &AppState) {
+        // Calculate command line height based on text width
+        let terminal_width = frame.area().width as usize;
+        let prompt = "$ ";
+        let prompt_width = prompt.width();
+        let border_width = 2; // Left and right borders
+        let available_width = terminal_width.saturating_sub(border_width);
+        
+        let command_line_height = if available_width > prompt_width {
+            let total_width = prompt_width + app.command_line.width();
+            let lines_needed = (total_width + available_width - 1) / available_width;
+            (lines_needed as u16).max(1).min(5) + 2 // +2 for borders, max 5 lines of text
+        } else {
+            3 // Default minimum height with borders
+        };
+
         // Adjust layout based on whether command output is visible
         let constraints = if app.command_output_visible {
             vec![
                 Constraint::Min(3),
                 Constraint::Length(app.command_output_height),
-                Constraint::Length(5),  // Increased command line height
+                Constraint::Length(command_line_height),
                 Constraint::Length(1),
             ]
         } else {
             vec![
                 Constraint::Min(3),
-                Constraint::Length(5),  // Increased command line height
+                Constraint::Length(command_line_height),
                 Constraint::Length(1),
             ]
         };
@@ -338,15 +353,27 @@ impl UI {
 
         let prompt = "$ ";
         let text = format!("{}{}", prompt, app.command_line);
-        let paragraph = Paragraph::new(text).style(Style::default().fg(theme.command_line_fg));
+        
+        // Use Paragraph with wrap for multi-line support
+        let paragraph = Paragraph::new(text)
+            .style(Style::default().fg(theme.command_line_fg))
+            .wrap(ratatui::widgets::Wrap { trim: false });
 
         frame.render_widget(paragraph, inner_area);
 
-        // Always show cursor
-        frame.set_cursor_position((
-            inner_area.x + prompt.len() as u16 + app.command_cursor as u16,
-            inner_area.y,
-        ));
+        // Calculate cursor position considering line wrapping
+        let prompt_and_cursor = prompt.len() + app.command_cursor;
+        let width = inner_area.width as usize;
+        let cursor_line = prompt_and_cursor / width;
+        let cursor_col = prompt_and_cursor % width;
+        
+        // Only show cursor if it's within the visible area
+        if cursor_line < inner_area.height as usize {
+            frame.set_cursor_position((
+                inner_area.x + cursor_col as u16,
+                inner_area.y + cursor_line as u16,
+            ));
+        }
     }
 
     fn draw_status_bar(frame: &mut Frame, area: Rect, app: &AppState, theme: &cortex_core::Theme) {
