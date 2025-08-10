@@ -13,6 +13,11 @@ pub struct UI;
 
 impl UI {
     pub fn draw(frame: &mut Frame, app: &AppState) {
+        let theme = app.theme_manager.get_current_theme();
+
+        // FIRST: Fill entire terminal with theme background
+        Self::draw_background(frame, frame.area(), theme);
+
         // Calculate command line height based on text width
         let terminal_width = frame.area().width as usize;
         let prompt = "$ ";
@@ -60,8 +65,6 @@ impl UI {
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(panels_area);
-
-        let theme = app.theme_manager.get_current_theme();
         Self::draw_panel(
             frame,
             panels[0],
@@ -144,10 +147,15 @@ impl UI {
         } else {
             format!(" {} ", panel.current_dir.display())
         };
+        // First fill panel area with panel background color
+        let panel_bg = Block::default().style(Style::default().bg(theme.panel_background));
+        frame.render_widget(panel_bg, area);
+
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_style(border_style);
+            .border_style(border_style)
+            .style(Style::default().bg(theme.panel_background));
 
         let inner_area = block.inner(area);
         frame.render_widget(block, area);
@@ -285,8 +293,7 @@ impl UI {
             VfsEntryType::Symlink => style.fg(theme.symlink),
             VfsEntryType::File => {
                 // Try to infer type from extension
-                let extension = entry.name.split('.').next_back().map(String::from);
-                let extension = entry.name.rsplitn(2, '.').next();
+                let extension = entry.name.rsplit('.').next();
                 if let Some(ext) = extension {
                     match ext.to_lowercase().as_str() {
                         "rs" | "go" | "py" | "js" | "ts" | "java" | "c" | "cpp" | "h" => {
@@ -432,7 +439,11 @@ impl UI {
             String::new()
         };
 
-        let right_text = format!("{} items | {} | F1 Help ", file_count, total_size);
+        let theme_name = format!("{:?}", theme.mode);
+        let right_text = format!(
+            "{} items | {} | {} | F1 Help ",
+            file_count, total_size, theme_name
+        );
 
         // Calculate spacing
         let left_width = left_text.width();
@@ -542,5 +553,11 @@ impl UI {
         let list = List::new(output_lines).block(block);
 
         frame.render_widget(list, area);
+    }
+
+    fn draw_background(frame: &mut Frame, area: Rect, theme: &cortex_core::Theme) {
+        // Fill the entire terminal with the theme's background color
+        let background = Block::default().style(Style::default().bg(theme.background));
+        frame.render_widget(background, area);
     }
 }
