@@ -13,8 +13,8 @@ impl LinuxTrash {
         let trash_dir = Self::get_trash_directory();
 
         // Ensure trash directories exist
-        let _ = fs::create_dir_all(&trash_dir.join("files"));
-        let _ = fs::create_dir_all(&trash_dir.join("info"));
+        let _ = fs::create_dir_all(trash_dir.join("files"));
+        let _ = fs::create_dir_all(trash_dir.join("info"));
 
         Self { trash_dir }
     }

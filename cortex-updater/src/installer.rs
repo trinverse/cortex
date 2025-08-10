@@ -96,7 +96,7 @@ impl Installer {
             let path = extract_dir.join(file.name());
 
             if file.is_dir() {
-                fs::create_dir_all(&path)?;
+                fs::create_dir_all(path)?;
             } else {
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent)?;
