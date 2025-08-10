@@ -10,7 +10,7 @@ on:
       distributions:
         description: 'Ubuntu distributions (space-separated)'
         required: true
-        default: 'focal jammy noble'
+        default: 'focal jammy noble oracular'
 
 jobs:
   publish-ppa:

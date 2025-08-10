@@ -161,11 +161,11 @@ done
 ```
 
 Ubuntu version codenames:
-- `focal` - 20.04 LTS
-- `jammy` - 22.04 LTS
-- `lunar` - 23.04
-- `mantic` - 23.10
-- `noble` - 24.04 LTS
+- `focal` - 20.04 LTS (Focal Fossa)
+- `jammy` - 22.04 LTS (Jammy Jellyfish)
+- `noble` - 24.04 LTS (Noble Numbat)
+- `oracular` - 24.10 (Oracular Oriole)
+- `plucky` - 25.04 (Plucky Puffin) - Development version
 
 ## After Upload
 

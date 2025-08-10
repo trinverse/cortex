@@ -55,15 +55,22 @@ echo -e "${YELLOW}Select Ubuntu versions to build for:${NC}"
 echo "1) focal (20.04 LTS)"
 echo "2) jammy (22.04 LTS)"
 echo "3) noble (24.04 LTS)"
-echo "4) All of the above"
-read -p "Choice [4]: " DIST_CHOICE
-DIST_CHOICE=${DIST_CHOICE:-4}
+echo "4) oracular (24.10)"
+echo "5) plucky (25.04 dev)"
+echo "6) All stable releases (focal, jammy, noble, oracular)"
+echo "7) All including development (focal, jammy, noble, oracular, plucky)"
+read -p "Choice [6]: " DIST_CHOICE
+DIST_CHOICE=${DIST_CHOICE:-6}
 
 case $DIST_CHOICE in
     1) DISTRIBUTIONS="focal" ;;
     2) DISTRIBUTIONS="jammy" ;;
     3) DISTRIBUTIONS="noble" ;;
-    *) DISTRIBUTIONS="focal jammy noble" ;;
+    4) DISTRIBUTIONS="oracular" ;;
+    5) DISTRIBUTIONS="plucky" ;;
+    6) DISTRIBUTIONS="focal jammy noble oracular" ;;
+    7) DISTRIBUTIONS="focal jammy noble oracular plucky" ;;
+    *) DISTRIBUTIONS="focal jammy noble oracular" ;;
 esac
 
 echo -e "${GREEN}Building for: $DISTRIBUTIONS${NC}"

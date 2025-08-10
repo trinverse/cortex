@@ -12,9 +12,11 @@ on:
         required: true
         type: choice
         options:
-          - focal
-          - jammy
-          - noble
+          - focal     # 20.04 LTS
+          - jammy     # 22.04 LTS
+          - noble     # 24.04 LTS
+          - oracular  # 24.10
+          - plucky    # 25.04 (development)
 
 jobs:
   publish:
