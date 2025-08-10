@@ -1,0 +1,122 @@
+name: Publish to Ubuntu PPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 0.1.0)'
+        required: true
+        default: '0.1.0'
+      distributions:
+        description: 'Ubuntu distributions (space-separated)'
+        required: true
+        default: 'focal jammy noble'
+
+jobs:
+  publish-ppa:
+    name: Build and Publish to PPA
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            devscripts \
+            debhelper \
+            dput \
+            gnupg \
+            lintian \
+            cargo \
+            rustc
+      
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | base64 --decode | gpg --batch --import
+          echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
+          gpg-connect-agent reloadagent /bye
+          # Set up GPG for non-interactive signing
+          echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 --pinentry-mode loopback --sign --armor --output /dev/null --local-user ${{ secrets.GPG_KEY_ID }} <<< "test"
+          
+      - name: Configure dput
+        env:
+          LAUNCHPAD_USERNAME: ${{ secrets.LAUNCHPAD_USERNAME }}
+        run: |
+          cat > ~/.dput.cf << EOF
+          [cortex-ppa]
+          fqdn = ppa.launchpad.net
+          method = ftp
+          incoming = ~${LAUNCHPAD_USERNAME}/ubuntu/cortex
+          login = anonymous
+          allow_unsigned_uploads = 0
+          EOF
+      
+      - name: Build and upload packages
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          DISTRIBUTIONS: ${{ github.event.inputs.distributions }}
+          DEBEMAIL: ${{ secrets.DEBEMAIL }}
+          DEBFULLNAME: ${{ secrets.DEBFULLNAME }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: |
+          # Create build directory
+          BUILD_DIR="$HOME/ppa-build"
+          mkdir -p "$BUILD_DIR"
+          
+          # For each distribution
+          for DIST in $DISTRIBUTIONS; do
+            echo "Building for Ubuntu $DIST..."
+            
+            # Set version
+            if [ "$DIST" == "focal" ]; then
+              FULL_VERSION="${VERSION}-1ubuntu1"
+            else
+              FULL_VERSION="${VERSION}-1ubuntu1~${DIST}1"
+            fi
+            
+            # Prepare source
+            WORK_DIR="$BUILD_DIR/cortex-${VERSION}"
+            rm -rf "$WORK_DIR"
+            mkdir -p "$WORK_DIR"
+            
+            # Copy source files
+            tar --exclude='.git' --exclude='target' -cf - . | (cd "$WORK_DIR" && tar -xf -)
+            
+            # Create orig tarball
+            cd "$BUILD_DIR"
+            tar czf "cortex_${VERSION}.orig.tar.gz" "cortex-${VERSION}"
+            
+            # Prepare debian files
+            cd "$WORK_DIR"
+            mkdir -p debian
+            
+            # Copy debian files from packaging/debian
+            cp -r packaging/debian/* debian/
+            
+            # Update changelog
+            cat > debian/changelog << EOF
+          cortex (${FULL_VERSION}) ${DIST}; urgency=medium
+          
+            * Release version ${VERSION} for Ubuntu ${DIST}
+          
+           -- ${DEBFULLNAME} <${DEBEMAIL}>  $(date -R)
+          EOF
+            
+            # Build source package with passphrase
+            echo "${{ secrets.GPG_PASSPHRASE }}" | debuild -S -sa -k${GPG_KEY_ID} -p"gpg --batch --passphrase-fd 0 --pinentry-mode loopback"
+            
+            # Upload to PPA
+            cd "$BUILD_DIR"
+            dput cortex-ppa cortex_${FULL_VERSION}_source.changes
+          done
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ppa-packages
+          path: ~/ppa-build/*.changes
