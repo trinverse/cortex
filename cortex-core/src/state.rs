@@ -428,7 +428,7 @@ impl AppState {
         #[cfg(target_os = "macos")]
         {
             if let Ok(output) = std::process::Command::new("defaults")
-                .args(&["read", "-g", "AppleInterfaceStyle"])
+                .args(["read", "-g", "AppleInterfaceStyle"])
                 .output()
             {
                 let result = String::from_utf8_lossy(&output.stdout);
