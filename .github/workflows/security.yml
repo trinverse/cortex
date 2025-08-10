@@ -72,7 +72,7 @@ jobs:
           cargo license
           
           # Check for problematic licenses
-          if cargo license | grep -E "(GPL|AGPL|LGPL)" | grep -v "MIT/Apache-2.0"; then
+          if cargo license | grep -E "(GPL|AGPL|LGPL)" | grep -v "MIT/Apache-2.0" || true; then
             echo "::warning::Found dependencies with copyleft licenses"
           fi
 
