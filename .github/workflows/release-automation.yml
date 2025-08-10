@@ -251,46 +251,61 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Check for existing workflows
+        id: check-workflows
+        run: |
+          # Check which workflows exist and set outputs
+          echo "has_homebrew=$(if [ -f .github/workflows/release-homebrew.yml ]; then echo true; else echo false; fi)" >> $GITHUB_OUTPUT
+          echo "has_snap=$(if [ -f .github/workflows/publish-snap.yml ]; then echo true; else echo false; fi)" >> $GITHUB_OUTPUT
+          echo "has_aur=$(if [ -f .github/workflows/publish-aur.yml ]; then echo true; else echo false; fi)" >> $GITHUB_OUTPUT
+          echo "has_chocolatey=$(if [ -f .github/workflows/publish-chocolatey.yml ]; then echo true; else echo false; fi)" >> $GITHUB_OUTPUT
+          echo "has_ppa=$(if [ -f .github/workflows/publish-ppa-all.yml ]; then echo true; else echo false; fi)" >> $GITHUB_OUTPUT
+      
       - name: Trigger Homebrew update
-        if: needs.prepare-release.outputs.is_prerelease == 'false'
+        if: needs.prepare-release.outputs.is_prerelease == 'false' && steps.check-workflows.outputs.has_homebrew == 'true'
         run: |
           gh workflow run release-homebrew.yml \
             -f version="${{ needs.prepare-release.outputs.version }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
       
       - name: Trigger Snap Store update
-        if: needs.prepare-release.outputs.is_prerelease == 'false'
+        if: needs.prepare-release.outputs.is_prerelease == 'false' && steps.check-workflows.outputs.has_snap == 'true'
         run: |
           gh workflow run publish-snap.yml \
             -f version="${{ needs.prepare-release.outputs.version }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
       
       - name: Trigger AUR update
-        if: needs.prepare-release.outputs.is_prerelease == 'false'
+        if: needs.prepare-release.outputs.is_prerelease == 'false' && steps.check-workflows.outputs.has_aur == 'true'
         run: |
           gh workflow run publish-aur.yml \
             -f version="${{ needs.prepare-release.outputs.version }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
       
       - name: Trigger Chocolatey update
-        if: needs.prepare-release.outputs.is_prerelease == 'false'
+        if: needs.prepare-release.outputs.is_prerelease == 'false' && steps.check-workflows.outputs.has_chocolatey == 'true'
         run: |
           gh workflow run publish-chocolatey.yml \
             -f version="${{ needs.prepare-release.outputs.version }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
       
       - name: Trigger PPA update
-        if: needs.prepare-release.outputs.is_prerelease == 'false'
+        if: needs.prepare-release.outputs.is_prerelease == 'false' && steps.check-workflows.outputs.has_ppa == 'true'
         run: |
           gh workflow run publish-ppa-all.yml \
             -f version="${{ needs.prepare-release.outputs.version }}" \
             -f distribution="all"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
 
   # Announce release
   announce-release:
