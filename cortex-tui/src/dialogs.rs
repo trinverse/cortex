@@ -30,6 +30,7 @@ pub enum Dialog {
     Plugin(PluginDialog),
     Config(ConfigDialog),
     SaveConfirm(SaveConfirmDialog),
+    ThemeSelection(ThemeSelectionDialog),
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +89,53 @@ impl SaveConfirmDialog {
             SaveChoice::DontSave => SaveChoice::Save,
             SaveChoice::Cancel => SaveChoice::DontSave,
         };
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ThemeSelectionDialog {
+    pub selected_index: usize,
+    pub themes: Vec<(cortex_core::ThemeMode, String)>,
+}
+
+impl ThemeSelectionDialog {
+    pub fn new(current_mode: cortex_core::ThemeMode) -> Self {
+        let themes = vec![
+            (cortex_core::ThemeMode::Dark, "Dark".to_string()),
+            (cortex_core::ThemeMode::Light, "Light".to_string()),
+            (cortex_core::ThemeMode::Gruvbox, "Gruvbox".to_string()),
+            (cortex_core::ThemeMode::Nord, "Nord".to_string()),
+            (
+                cortex_core::ThemeMode::Random,
+                "Random (changes every 10 min)".to_string(),
+            ),
+        ];
+
+        let selected_index = themes
+            .iter()
+            .position(|(mode, _)| *mode == current_mode)
+            .unwrap_or(0);
+
+        Self {
+            selected_index,
+            themes,
+        }
+    }
+
+    pub fn move_up(&mut self) {
+        if self.selected_index > 0 {
+            self.selected_index -= 1;
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        if self.selected_index < self.themes.len() - 1 {
+            self.selected_index += 1;
+        }
+    }
+
+    pub fn get_selected_theme(&self) -> cortex_core::ThemeMode {
+        self.themes[self.selected_index].0
     }
 }
 
@@ -205,6 +253,12 @@ pub struct HelpDialog {
     pub selected_index: usize,
 }
 
+impl Default for HelpDialog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HelpDialog {
     pub fn new() -> Self {
         let items = vec![
@@ -221,6 +275,8 @@ impl HelpDialog {
             ("F6".to_string(), "Move/rename files".to_string()),
             ("F7".to_string(), "Create directory".to_string()),
             ("F8".to_string(), "Delete files".to_string()),
+            ("F9".to_string(), "Next theme".to_string()),
+            ("F10".to_string(), "Toggle random theme".to_string()),
             ("Space".to_string(), "Mark/unmark file".to_string()),
             ("Ctrl+A".to_string(), "Mark all".to_string()),
             ("Ctrl+U".to_string(), "Unmark all".to_string()),
@@ -299,6 +355,10 @@ pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog) {
         Dialog::SaveConfirm(d) => {
             let area = centered_rect(60, 20, frame.area());
             render_save_confirm_dialog(frame, area, d)
+        }
+        Dialog::ThemeSelection(d) => {
+            let area = centered_rect(50, 30, frame.area());
+            render_theme_selection_dialog(frame, area, d)
         }
     }
 }
@@ -600,6 +660,67 @@ fn render_help_dialog(frame: &mut Frame, dialog: &HelpDialog) {
 
     let list = List::new(items);
     frame.render_widget(list, inner);
+}
+
+fn render_theme_selection_dialog(frame: &mut Frame, area: Rect, dialog: &ThemeSelectionDialog) {
+    frame.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title(" Select Theme ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Min(5),
+            Constraint::Length(2),
+        ])
+        .split(inner);
+
+    // Instructions
+    let instructions = Paragraph::new("Use ↑/↓ to select, Enter to apply, Esc to cancel")
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(Alignment::Center);
+    frame.render_widget(instructions, chunks[0]);
+
+    // Theme list
+    let items: Vec<ListItem> = dialog
+        .themes
+        .iter()
+        .enumerate()
+        .map(|(i, (_, name))| {
+            let style = if i == dialog.selected_index {
+                Style::default()
+                    .bg(Color::Rgb(40, 44, 52))
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+
+            let content = if i == dialog.selected_index {
+                format!("  ▶ {}", name)
+            } else {
+                format!("    {}", name)
+            };
+
+            ListItem::new(Line::from(vec![Span::styled(content, style)]))
+        })
+        .collect();
+
+    let list = List::new(items);
+    frame.render_widget(list, chunks[1]);
+
+    // Status
+    let status = Paragraph::new("Press Enter to apply the selected theme")
+        .style(Style::default().fg(Color::Yellow))
+        .alignment(Alignment::Center);
+    frame.render_widget(status, chunks[2]);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {

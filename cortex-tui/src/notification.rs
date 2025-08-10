@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
@@ -80,7 +80,7 @@ impl Notification {
         self
     }
 
-    pub fn file_created(id: u64, path: &PathBuf) -> Self {
+    pub fn file_created(id: u64, path: &Path) -> Self {
         let filename = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -94,7 +94,7 @@ impl Notification {
         )
     }
 
-    pub fn file_modified(id: u64, path: &PathBuf) -> Self {
+    pub fn file_modified(id: u64, path: &Path) -> Self {
         let filename = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -108,7 +108,7 @@ impl Notification {
         )
     }
 
-    pub fn file_deleted(id: u64, path: &PathBuf) -> Self {
+    pub fn file_deleted(id: u64, path: &Path) -> Self {
         let filename = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -122,7 +122,7 @@ impl Notification {
         )
     }
 
-    pub fn file_renamed(id: u64, from: &PathBuf, to: &PathBuf) -> Self {
+    pub fn file_renamed(id: u64, from: &Path, to: &Path) -> Self {
         let from_name = from
             .file_name()
             .and_then(|n| n.to_str())
@@ -197,7 +197,7 @@ impl NotificationManager {
         id
     }
 
-    pub fn add_file_change(&mut self, path: &PathBuf, change_type: NotificationType) {
+    pub fn add_file_change(&mut self, path: &Path, change_type: NotificationType) {
         let notification = match change_type {
             NotificationType::FileCreated => Notification::file_created(self.next_id, path),
             NotificationType::FileModified => Notification::file_modified(self.next_id, path),
@@ -209,7 +209,7 @@ impl NotificationManager {
         self.add(notification);
     }
 
-    pub fn add_file_rename(&mut self, from: &PathBuf, to: &PathBuf) {
+    pub fn add_file_rename(&mut self, from: &Path, to: &Path) {
         let notification = Notification::file_renamed(self.next_id, from, to);
         self.next_id += 1;
         self.add(notification);
@@ -345,7 +345,7 @@ impl NotificationManager {
 
                 let progress_line = Line::from(vec![Span::styled(
                     " ".repeat(progress_width as usize),
-                    Style::default().bg(notification.notification_type.color().into()),
+                    Style::default().bg(notification.notification_type.color()),
                 )]);
                 let progress_widget = Paragraph::new(progress_line);
                 frame.render_widget(progress_widget, progress_area);

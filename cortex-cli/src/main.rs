@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use cortex_core::{
-    AppState, CacheRefresher, DirectoryCache, FileOperation, FileSystem, FileType, LuaPlugin,
-    PluginEvent, RemoteCredentials, VfsPath,
+    AppState, DirectoryCache, FileOperation, FileSystem, FileType, LuaPlugin, PluginEvent,
+    RemoteCredentials, VfsPath,
 };
 use cortex_plugins::Plugin;
 use cortex_tui::{
@@ -10,7 +10,8 @@ use cortex_tui::{
     ContextMenuAction, Dialog, EditorDialog, ErrorDialog, Event, EventHandler, FileViewer,
     FilterDialog, HelpDialog, InputDialog, MouseAction, MouseHandler, MouseRegionManager,
     NotificationManager, NotificationType, PluginDialog, Position, ProgressDialog, SaveChoice,
-    SaveConfirmDialog, SearchDialog, SearchState, TextEditor, ViewerDialog, UI,
+    SaveConfirmDialog, SearchDialog, SearchState, TextEditor, ThemeSelectionDialog, ViewerDialog,
+    UI,
 };
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, KeyCode, KeyModifiers},
@@ -18,7 +19,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::{io, path::PathBuf, sync::Arc, time::Duration};
+use std::{io, path::PathBuf, time::Duration};
 use tokio::sync::mpsc;
 
 mod command;
@@ -125,6 +126,7 @@ struct App {
     search_rx: Option<mpsc::UnboundedReceiver<cortex_core::SearchProgress>>,
     refresh_needed: bool,
     file_change_rx: Option<mpsc::UnboundedReceiver<()>>,
+    command_output_rx: Option<mpsc::Receiver<String>>,
     file_event_rx: Option<mpsc::UnboundedReceiver<cortex_core::FileMonitorEvent>>,
     notification_manager: NotificationManager,
     mouse_handler: MouseHandler,
@@ -178,10 +180,11 @@ impl App {
             eprintln!("Warning: Failed to initialize file monitor: {}", e);
         }
 
-        // Start cache refresher
-        let cache_refresher = Arc::new(CacheRefresher::new(state.directory_cache.clone()));
-        cache_refresher.start().await;
-        state.cache_refresher = Some(cache_refresher.clone());
+        // Start cache refresher - disabled by default to prevent resource usage
+        // Can be enabled with /monitor command
+        // let cache_refresher = Arc::new(CacheRefresher::new(state.directory_cache.clone()));
+        // cache_refresher.start().await;
+        // state.cache_refresher = Some(cache_refresher.clone());
 
         let events = EventHandler::new(Duration::from_millis(100));
 
@@ -196,6 +199,7 @@ impl App {
             search_rx: None,
             refresh_needed: false,
             file_change_rx: Some(file_change_rx),
+            command_output_rx: None,
             file_event_rx: Some(file_event_rx),
             notification_manager: NotificationManager::new(),
             mouse_handler: MouseHandler::new(),
@@ -255,6 +259,41 @@ impl App {
                 self.handle_file_event(event);
             }
 
+            // Check for command output
+            let mut command_outputs = Vec::new();
+            let mut channel_closed = false;
+
+            if let Some(rx) = &mut self.command_output_rx {
+                // Try to receive all available messages
+                loop {
+                    match rx.try_recv() {
+                        Ok(output) => {
+                            command_outputs.push(output);
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                            // No more messages available right now
+                            break;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                            // Channel is closed, command has finished
+                            channel_closed = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Add all received outputs to state
+            for output in command_outputs {
+                self.state.add_command_output(output);
+            }
+
+            // Handle channel closure
+            if channel_closed {
+                self.state.set_command_running(false);
+                self.command_output_rx = None;
+            }
+
             match self.events.next().await? {
                 Event::Key(key_event) => {
                     if self.context_menu.is_some() {
@@ -277,6 +316,9 @@ impl App {
                     self.terminal.autoresize()?;
                 }
                 Event::Tick => {
+                    // Update theme manager for random rotation
+                    self.state.theme_manager.update();
+
                     // Check if panels need refreshing due to file system changes
                     if self.refresh_needed && self.state.is_file_monitoring_active() {
                         if let Err(e) = Self::refresh_panel_with_cache(
@@ -461,24 +503,35 @@ impl App {
                 let command = self.state.command_line.clone();
 
                 // Check for special / commands
-                if command.starts_with("/") {
-                    self.handle_special_command(&command[1..]).await?;
+                if let Some(cmd) = command.strip_prefix("/") {
+                    self.handle_special_command(cmd).await?;
                 } else {
                     // Add to history
                     self.state.command_history.push(command.clone());
 
                     // Check for cd command
-                    if command.starts_with("cd ") {
-                        let path = &command[3..].trim();
+                    if let Some(path_str) = command.strip_prefix("cd ") {
+                        let path = path_str.trim();
                         if let Some(new_dir) = CommandProcessor::parse_cd_path(
                             path,
                             &self.state.active_panel().current_dir,
                         ) {
+                            // Update file monitoring if enabled
+                            if self.state.is_file_monitoring_active() {
+                                let active = self.state.active_panel;
+                                self.state.update_file_monitoring(active, &new_dir).await?;
+                            }
+
                             let panel = self.state.active_panel_mut();
-                            panel.current_dir = new_dir;
+                            panel.current_dir = new_dir.clone();
                             panel.selected_index = 0;
                             panel.view_offset = 0;
                             Self::refresh_panel(panel)?;
+
+                            self.state.set_status_message(format!(
+                                "Changed directory to: {}",
+                                new_dir.display()
+                            ));
                         } else {
                             self.state.set_status_message(format!(
                                 "cd: cannot access '{}': No such directory",
@@ -486,17 +539,8 @@ impl App {
                             ));
                         }
                     } else {
-                        // Execute external command
-                        match CommandProcessor::execute_command(&command, &self.state).await {
-                            Ok(output) => {
-                                if !output.is_empty() {
-                                    self.state.set_status_message(output);
-                                }
-                            }
-                            Err(e) => {
-                                self.state.set_status_message(format!("Error: {}", e));
-                            }
-                        }
+                        // Execute external command with streaming output
+                        self.execute_streaming_command(command.clone()).await?;
                     }
                 }
 
@@ -575,6 +619,33 @@ impl App {
                     self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
                 }
             }
+            (KeyCode::F(9), _) => {
+                // Cycle through themes
+                self.state.theme_manager.next_theme();
+                self.state.set_status_message(format!(
+                    "Theme changed to: {:?}",
+                    self.state.theme_manager.get_current_theme().mode
+                ));
+            }
+            (KeyCode::F(10), _) => {
+                // Open theme selector or toggle random mode
+                if self.state.theme_manager.get_current_theme().mode
+                    == cortex_core::ThemeMode::Random
+                {
+                    self.state
+                        .theme_manager
+                        .set_theme(cortex_core::ThemeMode::Dark);
+                    self.state
+                        .set_status_message("Random theme rotation disabled");
+                } else {
+                    self.state
+                        .theme_manager
+                        .set_theme(cortex_core::ThemeMode::Random);
+                    self.state.set_status_message(
+                        "Random theme rotation enabled (changes every 10 minutes)",
+                    );
+                }
+            }
 
             // Delete key - move to trash by default
             (KeyCode::Delete, KeyModifiers::NONE) => {
@@ -596,9 +667,22 @@ impl App {
 
             // Control keys
             (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
-                // Properly cleanup and exit
-                self.cleanup_and_exit().await?;
-                return Ok(false);
+                // Stop file monitoring first to prevent loops
+                if let Some(ref monitor) = self.state.file_monitor.take() {
+                    let _ = monitor.stop().await;
+                }
+                // Stop cache refresher if running
+                if let Some(ref refresher) = self.state.cache_refresher.take() {
+                    refresher.stop();
+                }
+                // Cleanup terminal and exit
+                disable_raw_mode()?;
+                execute!(
+                    self.terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                return Ok(());
             }
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 if self.state.command_line.is_empty() {
@@ -741,6 +825,12 @@ impl App {
                 // Show command palette when / is typed on empty command line
                 self.dialog = Some(Dialog::CommandPalette(CommandPaletteDialog::new()));
             }
+            (KeyCode::Char('o'), KeyModifiers::SHIFT) | (KeyCode::Char('O'), _)
+                if self.state.command_line.is_empty() =>
+            {
+                // Toggle command output visibility with 'O' key
+                self.state.toggle_command_output();
+            }
             (KeyCode::Char(c), _) => {
                 self.state.command_line.insert(self.state.command_cursor, c);
                 self.state.command_cursor += 1;
@@ -758,12 +848,52 @@ impl App {
 
         match command {
             "exit" | "quit" | "q" => {
-                // Properly cleanup and exit
-                self.cleanup_and_exit().await?;
+                // Stop file monitoring first to prevent loops
+                if let Some(ref monitor) = self.state.file_monitor.take() {
+                    let _ = monitor.stop().await;
+                }
+                // Stop cache refresher
+                if let Some(ref refresher) = self.state.cache_refresher.take() {
+                    refresher.stop();
+                }
+                // Cleanup terminal and exit immediately
+                disable_raw_mode()?;
+                execute!(
+                    self.terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
                 std::process::exit(0);
             }
             "help" | "?" => {
                 self.dialog = Some(Dialog::Help(HelpDialog::new()));
+            }
+            "restart" => {
+                // Stop file monitoring first
+                if let Some(ref monitor) = self.state.file_monitor.take() {
+                    let _ = monitor.stop().await;
+                }
+                // Stop cache refresher
+                if let Some(ref refresher) = self.state.cache_refresher.take() {
+                    refresher.stop();
+                }
+                // Cleanup terminal
+                disable_raw_mode()?;
+                execute!(
+                    self.terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+
+                // Get the current executable path
+                let exe = std::env::current_exe()?;
+                let args: Vec<String> = std::env::args().skip(1).collect();
+
+                // Spawn a new instance
+                std::process::Command::new(exe).args(&args).spawn()?;
+
+                // Exit current instance
+                std::process::exit(0);
             }
             "reload" | "refresh" => {
                 Self::refresh_panel(self.state.active_panel_mut())?;
@@ -924,6 +1054,12 @@ impl App {
                     "Hidden files: {}",
                     if show_hidden { "shown" } else { "hidden" }
                 ));
+            }
+            "theme" => {
+                // Show theme selection dialog
+                self.dialog = Some(Dialog::ThemeSelection(ThemeSelectionDialog::new(
+                    self.state.theme_manager.get_current_theme().mode,
+                )));
             }
             "home" => {
                 if let Some(home) = dirs::home_dir() {
@@ -1320,11 +1456,7 @@ impl App {
                         if let Some(cmd) = dialog.get_selected_command() {
                             self.dialog = None;
                             // Remove the leading /
-                            let command = if cmd.starts_with('/') {
-                                &cmd[1..]
-                            } else {
-                                &cmd
-                            };
+                            let command = cmd.strip_prefix('/').unwrap_or(&cmd);
                             self.handle_special_command(command).await?;
                         }
                     }
@@ -1399,17 +1531,14 @@ impl App {
                     }
                     SearchState::Searching => {
                         // Handle search in progress
-                        match key.code {
-                            KeyCode::Esc => {
-                                // Cancel search
-                                self.search_rx = None; // Drop the receiver to stop processing
-                                dialog.state = SearchState::Results; // Show results collected so far
-                                self.state.set_status_message(format!(
-                                    "Search cancelled: {} results found",
-                                    dialog.results.len()
-                                ));
-                            }
-                            _ => {}
+                        if key.code == KeyCode::Esc {
+                            // Cancel search
+                            self.search_rx = None; // Drop the receiver to stop processing
+                            dialog.state = SearchState::Results; // Show results collected so far
+                            self.state.set_status_message(format!(
+                                "Search cancelled: {} results found",
+                                dialog.results.len()
+                            ));
                         }
                     }
                     SearchState::Results => {
@@ -1738,6 +1867,27 @@ impl App {
                     _ => {}
                 }
             }
+            Some(Dialog::ThemeSelection(dialog)) => match key.code {
+                KeyCode::Up => {
+                    dialog.move_up();
+                }
+                KeyCode::Down => {
+                    dialog.move_down();
+                }
+                KeyCode::Enter => {
+                    let selected_theme = dialog.get_selected_theme();
+                    self.state.theme_manager.set_theme(selected_theme);
+                    self.state.set_status_message(format!(
+                        "Theme changed to: {}",
+                        dialog.themes[dialog.selected_index].1
+                    ));
+                    self.dialog = None;
+                }
+                KeyCode::Esc => {
+                    self.dialog = None;
+                }
+                _ => {}
+            },
             None => {}
         }
 
@@ -1893,6 +2043,9 @@ impl App {
             panel.selected_index = panel.entries.len() - 1;
         }
 
+        // Update git info for the current directory
+        panel.git_info = cortex_core::get_git_info(&panel.current_dir);
+
         Ok(())
     }
 
@@ -1922,6 +2075,9 @@ impl App {
         if panel.selected_index >= panel.entries.len() && !panel.entries.is_empty() {
             panel.selected_index = panel.entries.len() - 1;
         }
+
+        // Update git info for the current directory
+        panel.git_info = cortex_core::get_git_info(&panel.current_dir);
 
         Ok(())
     }
@@ -2449,6 +2605,46 @@ impl App {
         } else {
             Vec::new()
         }
+    }
+
+    async fn execute_streaming_command(&mut self, command: String) -> Result<()> {
+        use tokio::sync::mpsc;
+
+        // Clear any previous output
+        self.state.clear_command_output();
+        self.state.set_command_running(true);
+
+        // Create channel for command output
+        let (tx, rx) = mpsc::channel::<String>(1000);
+        self.command_output_rx = Some(rx);
+
+        // Start the streaming command in a separate task
+        let current_dir = self.state.active_panel().current_dir.clone();
+        tokio::spawn(async move {
+            let result = CommandProcessor::execute_streaming_command_in_dir(
+                &command,
+                &current_dir,
+                tx.clone(),
+            )
+            .await;
+
+            // Send completion message
+            match result {
+                Ok(exit_code) => {
+                    let _ = tx
+                        .send(format!(
+                            "\n[COMPLETED] Command finished with exit code: {}",
+                            exit_code
+                        ))
+                        .await;
+                }
+                Err(e) => {
+                    let _ = tx.send(format!("\n[ERROR] Command failed: {}", e)).await;
+                }
+            }
+        });
+
+        Ok(())
     }
 
     async fn cleanup_and_exit(&mut self) -> Result<()> {

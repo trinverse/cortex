@@ -410,12 +410,10 @@ impl SearchEngine {
 
         if self.criteria.include_subdirs {
             if let Ok(entries) = fs::read_dir(path) {
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        if let Ok(metadata) = entry.metadata() {
-                            if metadata.is_dir() {
-                                count += self.count_directories(&entry.path(), depth + 1)?;
-                            }
+                for entry in entries.flatten() {
+                    if let Ok(metadata) = entry.metadata() {
+                        if metadata.is_dir() {
+                            count += self.count_directories(&entry.path(), depth + 1)?;
                         }
                     }
                 }

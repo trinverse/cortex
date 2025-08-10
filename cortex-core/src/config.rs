@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub general: GeneralConfig,
@@ -32,7 +32,7 @@ pub struct GeneralConfig {
     pub terminal: String,
     #[serde(default = "default_editor")]
     pub editor: String,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub auto_reload: bool,
     #[serde(default = "default_true")]
     pub confirm_operations: bool,
@@ -66,7 +66,7 @@ pub struct ColorConfig {
     pub symlink_fg: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KeybindingConfig {
     #[serde(default)]
     pub custom: Vec<CustomKeybinding>,
@@ -104,19 +104,6 @@ pub struct CustomKeybinding {
     pub command: String,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            panels: PanelConfig::default(),
-            colors: ColorConfig::default(),
-            keybindings: KeybindingConfig::default(),
-            plugins: PluginConfig::default(),
-            network: NetworkConfig::default(),
-        }
-    }
-}
-
 impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
@@ -125,7 +112,7 @@ impl Default for GeneralConfig {
             show_icons: false,
             terminal: default_terminal(),
             editor: default_editor(),
-            auto_reload: true,
+            auto_reload: false,
             confirm_operations: true,
             enable_sound: false,
             plugin_directory: default_plugin_dir(),
@@ -152,12 +139,6 @@ impl Default for ColorConfig {
             executable_fg: default_executable_fg(),
             symlink_fg: default_symlink_fg(),
         }
-    }
-}
-
-impl Default for KeybindingConfig {
-    fn default() -> Self {
-        Self { custom: Vec::new() }
     }
 }
 

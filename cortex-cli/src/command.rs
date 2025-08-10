@@ -1,7 +1,9 @@
 use anyhow::Result;
 use cortex_core::AppState;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as AsyncCommand;
+use tokio::sync::mpsc;
 
 pub struct CommandProcessor;
 
@@ -13,6 +15,7 @@ impl CommandProcessor {
     /// %D - opposite panel directory
     /// %p - full path of current file
     /// %P - full paths of marked files
+    #[allow(dead_code)]
     pub fn expand_command(command: &str, state: &AppState) -> String {
         let mut expanded = command.to_string();
         let active_panel = state.active_panel();
@@ -68,6 +71,7 @@ impl CommandProcessor {
         expanded
     }
 
+    #[allow(dead_code)]
     pub async fn execute_command(command: &str, state: &AppState) -> Result<String> {
         let expanded = Self::expand_command(command, state);
 
@@ -78,14 +82,6 @@ impl CommandProcessor {
         }
 
         match parts[0] {
-            "cd" => {
-                // Handle cd command internally
-                if parts.len() > 1 {
-                    Ok(format!("cd: {}", parts[1]))
-                } else {
-                    Ok("cd: missing argument".to_string())
-                }
-            }
             "pwd" => Ok(state
                 .active_panel()
                 .current_dir
@@ -102,7 +98,7 @@ impl CommandProcessor {
             "/watch" => {
                 let watched = state.left_panel.current_dir.to_string_lossy().to_string()
                     + ", "
-                    + &state.right_panel.current_dir.to_string_lossy().to_string();
+                    + state.right_panel.current_dir.to_string_lossy().as_ref();
                 Ok(format!("Watched directories: {}", watched))
             }
             "/notifications" => Ok("Notifications toggle command - handled by UI".to_string()),
@@ -114,6 +110,7 @@ impl CommandProcessor {
         }
     }
 
+    #[allow(dead_code)]
     async fn execute_external_command(command: &str) -> Result<String> {
         let output = if cfg!(target_os = "windows") {
             AsyncCommand::new("cmd")
@@ -137,7 +134,93 @@ impl CommandProcessor {
         }
     }
 
-    pub fn parse_cd_path(args: &str, current_dir: &PathBuf) -> Option<PathBuf> {
+    pub async fn execute_streaming_command_in_dir(
+        command: &str,
+        current_dir: &Path,
+        output_sender: mpsc::Sender<String>,
+    ) -> Result<i32> {
+        // Send start message
+        let _ = output_sender
+            .send(format!("[STARTED] Running: {}", command))
+            .await;
+        let _ = output_sender
+            .send(format!("[WORKING DIR] {}", current_dir.display()))
+            .await;
+
+        let mut child = if cfg!(target_os = "windows") {
+            AsyncCommand::new("cmd")
+                .args(["/C", command])
+                .current_dir(current_dir)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()?
+        } else {
+            AsyncCommand::new("sh")
+                .args(["-c", command])
+                .current_dir(current_dir)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()?
+        };
+
+        // Read stdout
+        let stdout_handle = if let Some(stdout) = child.stdout.take() {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+            let sender_clone = output_sender.clone();
+
+            Some(tokio::spawn(async move {
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if !line.trim().is_empty() {
+                        let _ = sender_clone.send(line).await;
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
+        // Read stderr
+        let stderr_handle = if let Some(stderr) = child.stderr.take() {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            let sender_clone = output_sender.clone();
+
+            Some(tokio::spawn(async move {
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if !line.trim().is_empty() {
+                        let _ = sender_clone.send(format!("[ERROR] {}", line)).await;
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
+        // Wait for process to complete
+        let status = child.wait().await?;
+        let exit_code = status.code().unwrap_or(-1);
+
+        // Wait for output streams to finish
+        if let Some(handle) = stdout_handle {
+            let _ = handle.await;
+        }
+        if let Some(handle) = stderr_handle {
+            let _ = handle.await;
+        }
+
+        // Send completion message
+        let _ = output_sender
+            .send(format!(
+                "[COMPLETED] Process finished with exit code: {}",
+                exit_code
+            ))
+            .await;
+
+        Ok(exit_code)
+    }
+
+    pub fn parse_cd_path(args: &str, current_dir: &Path) -> Option<PathBuf> {
         if args.is_empty() {
             return dirs::home_dir();
         }

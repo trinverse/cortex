@@ -24,6 +24,12 @@ pub struct ConnectionDialog {
     pub cursor_position: usize,
 }
 
+impl Default for ConnectionDialog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConnectionDialog {
     pub fn new() -> Self {
         Self {

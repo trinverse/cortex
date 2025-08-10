@@ -16,6 +16,12 @@ pub struct StringPoolStats {
     pub memory_saved: usize,
 }
 
+impl Default for StringPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StringPool {
     pub fn new() -> Self {
         Self {
@@ -86,11 +92,7 @@ impl<T: Clone + Default> ObjectPool<T> {
         let mut available = self.available.write().unwrap();
         let mut in_use = self.in_use.write().unwrap();
 
-        let obj = if let Some(obj) = available.pop() {
-            obj
-        } else {
-            T::default()
-        };
+        let obj = available.pop().unwrap_or_default();
 
         *in_use += 1;
 
@@ -223,6 +225,12 @@ impl CompressedFileEntry {
 pub struct PathTable {
     paths: Arc<RwLock<Vec<PathBuf>>>,
     index: Arc<RwLock<HashMap<PathBuf, u32>>>,
+}
+
+impl Default for PathTable {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PathTable {

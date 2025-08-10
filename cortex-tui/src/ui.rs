@@ -13,44 +13,87 @@ pub struct UI;
 
 impl UI {
     pub fn draw(frame: &mut Frame, app: &AppState) {
+        // Calculate command line height based on text width
+        let terminal_width = frame.area().width as usize;
+        let prompt = "$ ";
+        let prompt_width = prompt.width();
+        let border_width = 2; // Left and right borders
+        let available_width = terminal_width.saturating_sub(border_width);
+
+        let command_line_height = if available_width > prompt_width {
+            let total_width = prompt_width + app.command_line.width();
+            let lines_needed = total_width.div_ceil(available_width);
+            (lines_needed as u16).clamp(1, 5) + 2 // +2 for borders, max 5 lines of text
+        } else {
+            3 // Default minimum height with borders
+        };
+
+        // Adjust layout based on whether command output is visible
+        let constraints = if app.command_output_visible {
+            vec![
+                Constraint::Min(3),
+                Constraint::Length(app.command_output_height),
+                Constraint::Length(command_line_height),
+                Constraint::Length(1),
+            ]
+        } else {
+            vec![
+                Constraint::Min(3),
+                Constraint::Length(command_line_height),
+                Constraint::Length(1),
+            ]
+        };
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(3),
-                Constraint::Length(3),
-                Constraint::Length(1),
-            ])
+            .constraints(constraints)
             .split(frame.area());
+
+        let (panels_area, command_output_area, command_area, status_area) =
+            if app.command_output_visible {
+                (chunks[0], Some(chunks[1]), chunks[2], chunks[3])
+            } else {
+                (chunks[0], None, chunks[1], chunks[2])
+            };
 
         let panels = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(chunks[0]);
+            .split(panels_area);
 
+        let theme = app.theme_manager.get_current_theme();
         Self::draw_panel(
             frame,
             panels[0],
             &app.left_panel,
             app.active_panel == ActivePanel::Left,
+            theme,
         );
         Self::draw_panel(
             frame,
             panels[1],
             &app.right_panel,
             app.active_panel == ActivePanel::Right,
+            theme,
         );
-        Self::draw_command_line(frame, chunks[1], app);
-        Self::draw_status_bar(frame, chunks[2], app);
+
+        // Draw command output area if visible
+        if let Some(output_area) = command_output_area {
+            Self::draw_command_output(frame, output_area, app, theme);
+        }
+
+        Self::draw_command_line(frame, command_area, app, theme);
+        Self::draw_status_bar(frame, status_area, app, theme);
     }
 
-    fn draw_panel(frame: &mut Frame, area: Rect, panel: &PanelState, is_active: bool) {
-        let border_style = if is_active {
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Gray)
-        };
+    fn draw_panel(
+        frame: &mut Frame,
+        area: Rect,
+        panel: &PanelState,
+        is_active: bool,
+        theme: &cortex_core::Theme,
+    ) {
+        let border_style = theme.get_border_style(is_active);
 
         let title = if let Some(ref filter) = panel.filter {
             if panel.is_using_vfs() {
@@ -73,35 +116,33 @@ impl UI {
             } else {
                 format!(" {} [Filter: {}] ", panel.current_dir.display(), filter)
             }
-        } else {
-            if panel.is_using_vfs() {
-                if let Some(ref vfs_path) = panel.current_vfs_path {
-                    match vfs_path {
-                        cortex_core::VfsPath::Archive { .. } => format!(" [Archive] "),
-                        cortex_core::VfsPath::Sftp {
-                            host,
-                            username,
-                            path,
-                            ..
-                        } => {
-                            format!(" [SFTP: {}@{}:{}] ", username, host, path)
-                        }
-                        cortex_core::VfsPath::Ftp {
-                            host,
-                            username,
-                            path,
-                            ..
-                        } => {
-                            format!(" [FTP: {}@{}:{}] ", username, host, path)
-                        }
-                        _ => format!(" [Remote] "),
+        } else if panel.is_using_vfs() {
+            if let Some(ref vfs_path) = panel.current_vfs_path {
+                match vfs_path {
+                    cortex_core::VfsPath::Archive { .. } => " [Archive] ".to_string(),
+                    cortex_core::VfsPath::Sftp {
+                        host,
+                        username,
+                        path,
+                        ..
+                    } => {
+                        format!(" [SFTP: {}@{}:{}] ", username, host, path)
                     }
-                } else {
-                    format!(" [Archive] ")
+                    cortex_core::VfsPath::Ftp {
+                        host,
+                        username,
+                        path,
+                        ..
+                    } => {
+                        format!(" [FTP: {}@{}:{}] ", username, host, path)
+                    }
+                    _ => " [Remote] ".to_string(),
                 }
             } else {
-                format!(" {} ", panel.current_dir.display())
+                " [Archive] ".to_string()
             }
+        } else {
+            format!(" {} ", panel.current_dir.display())
         };
         let block = Block::default()
             .title(title)
@@ -126,7 +167,7 @@ impl UI {
                     let absolute_idx = start_idx + idx;
                     let is_selected = absolute_idx == panel.selected_index;
 
-                    let style = Self::get_vfs_entry_style(entry, is_selected, is_active);
+                    let style = Self::get_vfs_entry_style(entry, is_selected, is_active, theme);
                     let content = Self::format_vfs_entry(entry, inner_area.width as usize);
 
                     ListItem::new(Line::from(vec![Span::styled(content, style)]))
@@ -145,7 +186,8 @@ impl UI {
                     let is_selected = absolute_idx == panel.selected_index;
                     let is_marked = panel.is_marked(&entry.path);
 
-                    let style = Self::get_entry_style(entry, is_selected, is_marked, is_active);
+                    let style =
+                        Self::get_entry_style(entry, is_selected, is_marked, is_active, theme);
                     let content = Self::format_entry(entry, inner_area.width as usize);
 
                     ListItem::new(Line::from(vec![Span::styled(content, style)]))
@@ -162,39 +204,22 @@ impl UI {
         is_selected: bool,
         is_marked: bool,
         panel_active: bool,
+        theme: &cortex_core::Theme,
     ) -> Style {
-        let mut style = Style::default();
-
-        style = match entry.file_type {
-            FileType::Directory => style.fg(Color::Blue).add_modifier(Modifier::BOLD),
-            FileType::Symlink => style.fg(Color::Cyan),
-            FileType::File => {
-                if let Some(ext) = &entry.extension {
-                    match ext.as_str() {
-                        "rs" | "go" | "py" | "js" | "ts" | "java" | "c" | "cpp" | "h" => {
-                            style.fg(Color::Green)
-                        }
-                        "md" | "txt" | "doc" | "pdf" => style.fg(Color::Yellow),
-                        "jpg" | "png" | "gif" | "svg" => style.fg(Color::Magenta),
-                        "zip" | "tar" | "gz" | "rar" | "7z" => style.fg(Color::Red),
-                        _ => style.fg(Color::White),
-                    }
-                } else {
-                    style.fg(Color::White)
-                }
-            }
-            FileType::Other => style.fg(Color::Gray),
-        };
+        let mut style = theme.get_file_style(&entry.file_type, entry.extension.as_ref());
 
         if is_marked {
-            style = style.add_modifier(Modifier::UNDERLINED);
+            style = style
+                .fg(theme.marked)
+                .add_modifier(Modifier::UNDERLINED | Modifier::BOLD);
         }
 
         if is_selected {
+            let selected_style = theme.get_selected_style(panel_active);
+            // Preserve the foreground color but use the selected background
+            style = style.bg(selected_style.bg.unwrap_or(Color::Reset));
             if panel_active {
-                style = style.bg(Color::Blue).add_modifier(Modifier::BOLD);
-            } else {
-                style = style.bg(Color::DarkGray);
+                style = style.add_modifier(Modifier::BOLD);
             }
         }
 
@@ -246,36 +271,43 @@ impl UI {
         result
     }
 
-    fn get_vfs_entry_style(entry: &VfsEntry, is_selected: bool, panel_active: bool) -> Style {
+    fn get_vfs_entry_style(
+        entry: &VfsEntry,
+        is_selected: bool,
+        panel_active: bool,
+        theme: &cortex_core::Theme,
+    ) -> Style {
         let mut style = Style::default();
 
         style = match entry.entry_type {
-            VfsEntryType::Directory => style.fg(Color::Blue).add_modifier(Modifier::BOLD),
-            VfsEntryType::Archive => style.fg(Color::Red).add_modifier(Modifier::BOLD),
-            VfsEntryType::Symlink => style.fg(Color::Cyan),
+            VfsEntryType::Directory => style.fg(theme.directory).add_modifier(Modifier::BOLD),
+            VfsEntryType::Archive => style.fg(theme.archive).add_modifier(Modifier::BOLD),
+            VfsEntryType::Symlink => style.fg(theme.symlink),
             VfsEntryType::File => {
                 // Try to infer type from extension
-                if let Some(ext) = entry.name.split('.').last() {
+                let extension = entry.name.split('.').next_back().map(String::from);
+                let extension = entry.name.rsplitn(2, '.').next();
+                if let Some(ext) = extension {
                     match ext.to_lowercase().as_str() {
                         "rs" | "go" | "py" | "js" | "ts" | "java" | "c" | "cpp" | "h" => {
-                            style.fg(Color::Green)
+                            style.fg(theme.source_code)
                         }
-                        "md" | "txt" | "doc" | "pdf" => style.fg(Color::Yellow),
-                        "jpg" | "png" | "gif" | "svg" => style.fg(Color::Magenta),
-                        "zip" | "tar" | "gz" | "rar" | "7z" => style.fg(Color::Red),
-                        _ => style.fg(Color::White),
+                        "md" | "txt" | "doc" | "pdf" => style.fg(theme.document),
+                        "jpg" | "png" | "gif" | "svg" => style.fg(theme.image),
+                        "zip" | "tar" | "gz" | "rar" | "7z" => style.fg(theme.archive),
+                        _ => style.fg(theme.regular_file),
                     }
                 } else {
-                    style.fg(Color::White)
+                    style.fg(theme.regular_file)
                 }
             }
         };
 
         if is_selected {
+            let selected_style = theme.get_selected_style(panel_active);
+            style = style.bg(selected_style.bg.unwrap_or(Color::Reset));
             if panel_active {
-                style = style.bg(Color::Blue).add_modifier(Modifier::BOLD);
-            } else {
-                style = style.bg(Color::DarkGray);
+                style = style.add_modifier(Modifier::BOLD);
             }
         }
 
@@ -320,7 +352,12 @@ impl UI {
         }
     }
 
-    fn draw_command_line(frame: &mut Frame, area: Rect, app: &AppState) {
+    fn draw_command_line(
+        frame: &mut Frame,
+        area: Rect,
+        app: &AppState,
+        theme: &cortex_core::Theme,
+    ) {
         let title = if app.command_line.starts_with('/') {
             " Special Commands (/ for menu) "
         } else {
@@ -330,25 +367,37 @@ impl UI {
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(Style::default().fg(theme.active_border));
 
         let inner_area = block.inner(area);
         frame.render_widget(block, area);
 
         let prompt = "$ ";
         let text = format!("{}{}", prompt, app.command_line);
-        let paragraph = Paragraph::new(text).style(Style::default().fg(Color::White));
+
+        // Use Paragraph with wrap for multi-line support
+        let paragraph = Paragraph::new(text)
+            .style(Style::default().fg(theme.command_line_fg))
+            .wrap(ratatui::widgets::Wrap { trim: false });
 
         frame.render_widget(paragraph, inner_area);
 
-        // Always show cursor
-        frame.set_cursor_position((
-            inner_area.x + prompt.len() as u16 + app.command_cursor as u16,
-            inner_area.y,
-        ));
+        // Calculate cursor position considering line wrapping
+        let prompt_and_cursor = prompt.len() + app.command_cursor;
+        let width = inner_area.width as usize;
+        let cursor_line = prompt_and_cursor / width;
+        let cursor_col = prompt_and_cursor % width;
+
+        // Only show cursor if it's within the visible area
+        if cursor_line < inner_area.height as usize {
+            frame.set_cursor_position((
+                inner_area.x + cursor_col as u16,
+                inner_area.y + cursor_line as u16,
+            ));
+        }
     }
 
-    fn draw_status_bar(frame: &mut Frame, area: Rect, app: &AppState) {
+    fn draw_status_bar(frame: &mut Frame, area: Rect, app: &AppState, theme: &cortex_core::Theme) {
         let active_panel = app.active_panel();
         let current_entry = active_panel.current_entry();
 
@@ -369,22 +418,129 @@ impl UI {
             (0, "0 B".to_string())
         };
 
+        // Build the middle section with git info
+        let middle_text = if let Some(ref git_info) = active_panel.git_info {
+            let branch = &git_info.branch;
+            let dirty_indicator = if git_info.is_dirty { "*" } else { "" };
+            let ahead_behind = if git_info.ahead > 0 || git_info.behind > 0 {
+                format!(" ↑{} ↓{}", git_info.ahead, git_info.behind)
+            } else {
+                String::new()
+            };
+            format!(" 🔀 {}{}{}", branch, dirty_indicator, ahead_behind)
+        } else {
+            String::new()
+        };
+
         let right_text = format!("{} items | {} | F1 Help ", file_count, total_size);
 
+        // Calculate spacing
         let left_width = left_text.width();
+        let middle_width = middle_text.width();
         let right_width = right_text.width();
-        let padding = area.width.saturating_sub((left_width + right_width) as u16) as usize;
+        let total_width = area.width as usize;
 
-        let status_line = Line::from(vec![
-            Span::styled(left_text, Style::default().fg(Color::White)),
-            Span::raw(" ".repeat(padding)),
-            Span::styled(right_text, Style::default().fg(Color::White)),
-        ]);
+        // Create the status line with proper spacing
+        let mut spans = vec![Span::styled(
+            left_text,
+            Style::default().fg(theme.status_bar_fg),
+        )];
+
+        if !middle_text.is_empty() {
+            // Add padding before git info
+            let padding_before =
+                ((total_width.saturating_sub(left_width + middle_width + right_width)) / 2).max(1);
+            spans.push(Span::raw(" ".repeat(padding_before)));
+
+            // Add git info with color based on status
+            let git_style = if active_panel.git_info.as_ref().unwrap().is_dirty {
+                Style::default()
+                    .fg(theme.warning)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(theme.success)
+                    .add_modifier(Modifier::BOLD)
+            };
+            spans.push(Span::styled(middle_text, git_style));
+
+            // Add padding after git info
+            let padding_after = total_width
+                .saturating_sub(left_width + padding_before + middle_width + right_width);
+            spans.push(Span::raw(" ".repeat(padding_after)));
+        } else {
+            // No git info, just add padding
+            let padding = total_width.saturating_sub(left_width + right_width);
+            spans.push(Span::raw(" ".repeat(padding)));
+        }
+
+        spans.push(Span::styled(
+            right_text,
+            Style::default().fg(theme.status_bar_fg),
+        ));
+
+        let status_line = Line::from(spans);
 
         let paragraph = Paragraph::new(status_line)
-            .style(Style::default().bg(Color::DarkGray))
+            .style(
+                Style::default()
+                    .bg(theme.status_bar_bg)
+                    .fg(theme.status_bar_fg),
+            )
             .alignment(Alignment::Left);
 
         frame.render_widget(paragraph, area);
+    }
+
+    fn draw_command_output(
+        frame: &mut Frame,
+        area: Rect,
+        app: &AppState,
+        theme: &cortex_core::Theme,
+    ) {
+        let title = if app.command_running {
+            " Command Output (Running...) [Ctrl+C to cancel] ".to_string()
+        } else {
+            format!(
+                " Command Output ({} lines) [O to toggle] ",
+                app.command_output.len()
+            )
+        };
+
+        let block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.active_border));
+
+        // Convert command output to list items, showing most recent at bottom
+        let available_height = area.height.saturating_sub(2) as usize; // Account for borders
+        let total_lines = app.command_output.len();
+
+        // Show only the lines that fit, starting from the most recent that fit
+        let start_index = total_lines.saturating_sub(available_height);
+
+        let output_lines: Vec<ListItem> = app
+            .command_output
+            .iter()
+            .skip(start_index)
+            .map(|line| {
+                // Color-code different types of messages
+                let style = if line.starts_with("[ERROR]") {
+                    Style::default().fg(theme.error)
+                } else if line.starts_with("[STARTED]") || line.starts_with("[COMPLETED]") {
+                    Style::default().fg(theme.info).add_modifier(Modifier::BOLD)
+                } else if line.starts_with("[WORKING DIR]") {
+                    Style::default().fg(theme.dim_text)
+                } else {
+                    Style::default().fg(theme.normal_text)
+                };
+
+                ListItem::new(Line::from(vec![Span::raw(line.clone())])).style(style)
+            })
+            .collect();
+
+        let list = List::new(output_lines).block(block);
+
+        frame.render_widget(list, area);
     }
 }

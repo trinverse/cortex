@@ -2,12 +2,13 @@ use crate::cache::{CacheConfig, CacheRefresher, DirectoryCache};
 use crate::config::ConfigManager;
 use crate::file_monitor::{ChangeNotification, EventCallback, FileMonitorManager};
 use crate::fs::FileEntry;
+use crate::git::GitInfo;
 use crate::vfs::{RemoteCredentials, VfsEntry, VfsPath, VirtualFileSystem};
 use anyhow::Result;
 use cortex_plugins::{PluginContext, PluginManager};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, VecDeque};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +25,8 @@ pub struct PanelState {
     pub sort_mode: SortMode,
     pub marked_files: Vec<PathBuf>,
     pub filter: Option<String>,
+    #[serde(skip)]
+    pub git_info: Option<GitInfo>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -36,6 +39,7 @@ pub enum SortMode {
 
 impl PanelState {
     pub fn new(path: PathBuf) -> Self {
+        let git_info = crate::git::get_git_info(&path);
         Self {
             current_dir: path,
             current_vfs_path: None,
@@ -49,6 +53,7 @@ impl PanelState {
             sort_mode: SortMode::Name,
             marked_files: Vec::new(),
             filter: None,
+            git_info,
         }
     }
 
@@ -184,12 +189,10 @@ impl PanelState {
             } else {
                 self.filtered_entries.len()
             }
+        } else if self.is_using_vfs() {
+            self.vfs_entries.len()
         } else {
-            if self.is_using_vfs() {
-                self.vfs_entries.len()
-            } else {
-                self.entries.len()
-            }
+            self.entries.len()
         };
 
         if self.selected_index >= len && len > 0 {
@@ -304,6 +307,12 @@ pub struct AppState {
     pub auto_reload_enabled: bool,
     pub directory_cache: Arc<DirectoryCache>,
     pub cache_refresher: Option<Arc<CacheRefresher>>,
+    pub theme_manager: crate::ThemeManager,
+    // Command execution state
+    pub command_output: VecDeque<String>,
+    pub command_output_visible: bool,
+    pub command_running: bool,
+    pub command_output_height: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -380,6 +389,11 @@ impl AppState {
             auto_reload_enabled,
             directory_cache,
             cache_refresher: None,
+            theme_manager: crate::ThemeManager::new(crate::ThemeMode::Dark),
+            command_output: VecDeque::new(),
+            command_output_visible: false,
+            command_running: false,
+            command_output_height: 10, // Default height for command output area
         })
     }
 
@@ -417,6 +431,29 @@ impl AppState {
 
     pub fn clear_status_message(&mut self) {
         self.status_message = None;
+    }
+
+    pub fn add_command_output(&mut self, line: String) {
+        const MAX_OUTPUT_LINES: usize = 1000;
+        self.command_output.push_back(line);
+        if self.command_output.len() > MAX_OUTPUT_LINES {
+            self.command_output.pop_front();
+        }
+    }
+
+    pub fn clear_command_output(&mut self) {
+        self.command_output.clear();
+    }
+
+    pub fn toggle_command_output(&mut self) {
+        self.command_output_visible = !self.command_output_visible;
+    }
+
+    pub fn set_command_running(&mut self, running: bool) {
+        self.command_running = running;
+        if running {
+            self.command_output_visible = true;
+        }
     }
 
     /// Navigate into archive or VFS path
@@ -535,13 +572,11 @@ impl AppState {
         let selected_files = if active_panel.is_using_vfs() {
             // For VFS, use marked entries (simplified for now)
             Vec::new()
+        } else if active_panel.marked_files.is_empty() {
+            // If no files marked, use current file
+            current_file.clone().into_iter().collect()
         } else {
-            if active_panel.marked_files.is_empty() {
-                // If no files marked, use current file
-                current_file.clone().into_iter().collect()
-            } else {
-                active_panel.marked_files.clone()
-            }
+            active_panel.marked_files.clone()
         };
 
         PluginContext {
@@ -591,7 +626,7 @@ impl AppState {
     pub async fn update_file_monitoring(
         &mut self,
         panel: ActivePanel,
-        new_path: &PathBuf,
+        new_path: &Path,
     ) -> Result<()> {
         if let Some(ref monitor) = self.file_monitor {
             let old_path = match panel {

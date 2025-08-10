@@ -139,27 +139,18 @@ impl FileMonitor {
 
     fn convert_event(event: Event) -> Option<FileMonitorEvent> {
         match event.kind {
-            EventKind::Create(_) => {
-                if let Some(path) = event.paths.first() {
-                    Some(FileMonitorEvent::Created(path.clone()))
-                } else {
-                    None
-                }
-            }
-            EventKind::Modify(_) => {
-                if let Some(path) = event.paths.first() {
-                    Some(FileMonitorEvent::Modified(path.clone()))
-                } else {
-                    None
-                }
-            }
-            EventKind::Remove(_) => {
-                if let Some(path) = event.paths.first() {
-                    Some(FileMonitorEvent::Deleted(path.clone()))
-                } else {
-                    None
-                }
-            }
+            EventKind::Create(_) => event
+                .paths
+                .first()
+                .map(|path| FileMonitorEvent::Created(path.clone())),
+            EventKind::Modify(_) => event
+                .paths
+                .first()
+                .map(|path| FileMonitorEvent::Modified(path.clone())),
+            EventKind::Remove(_) => event
+                .paths
+                .first()
+                .map(|path| FileMonitorEvent::Deleted(path.clone())),
             EventKind::Other => {
                 // Handle rename events
                 if event.paths.len() == 2 {

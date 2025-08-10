@@ -23,6 +23,12 @@ pub struct CommandInfo {
     pub category: String,
 }
 
+impl Default for CommandPaletteDialog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CommandPaletteDialog {
     pub fn new() -> Self {
         let all_commands = Self::get_all_commands();
@@ -48,6 +54,12 @@ impl CommandPaletteDialog {
                 name: "/reload".to_string(),
                 description: "Reload file panels".to_string(),
                 shortcut: Some("Ctrl+R".to_string()),
+                category: "System".to_string(),
+            },
+            CommandInfo {
+                name: "/restart".to_string(),
+                description: "Restart Cortex application".to_string(),
+                shortcut: None,
                 category: "System".to_string(),
             },
             CommandInfo {
@@ -170,6 +182,12 @@ impl CommandPaletteDialog {
                 shortcut: None,
                 category: "Settings".to_string(),
             },
+            CommandInfo {
+                name: "/theme".to_string(),
+                description: "Change color theme".to_string(),
+                shortcut: None,
+                category: "Settings".to_string(),
+            },
             // Plugin System
             CommandInfo {
                 name: "/plugin".to_string(),
@@ -235,9 +253,8 @@ impl CommandPaletteDialog {
         if query == "/" {
             // Show all commands
             self.filtered_commands = self.all_commands.clone();
-        } else if query.starts_with('/') {
+        } else if let Some(search) = query.strip_prefix('/') {
             // Filter based on text after /
-            let search = &query[1..];
             self.filtered_commands = self
                 .all_commands
                 .iter()

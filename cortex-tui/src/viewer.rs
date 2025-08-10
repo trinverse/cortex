@@ -69,11 +69,7 @@ impl FileViewer {
 
             match line {
                 Ok(text) => {
-                    if self.wrap_lines {
-                        self.lines.push(text);
-                    } else {
-                        self.lines.push(text);
-                    }
+                    self.lines.push(text);
                 }
                 Err(_) => {
                     self.lines.push("<Error reading line>".to_string());

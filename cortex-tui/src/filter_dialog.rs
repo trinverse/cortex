@@ -11,6 +11,12 @@ pub struct FilterDialog {
     pub cursor_position: usize,
 }
 
+impl Default for FilterDialog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FilterDialog {
     pub fn new() -> Self {
         Self {

@@ -2,11 +2,13 @@ pub mod cache;
 pub mod config;
 pub mod file_monitor;
 pub mod fs;
+pub mod git;
 pub mod memory;
 pub mod operations;
 pub mod search;
 pub mod shortcuts;
 pub mod state;
+pub mod theme;
 pub mod vfs;
 pub mod virtual_scroll;
 
@@ -17,6 +19,7 @@ pub use file_monitor::{
     ChangeNotification, EventCallback, FileMonitor, FileMonitorEvent, FileMonitorManager,
 };
 pub use fs::{FileEntry, FileSystem, FileType};
+pub use git::{get_git_info, GitInfo};
 pub use memory::{
     CompressedFileEntry, MemoryManager, MemoryStats, ObjectPool, PathTable, StringPool,
 };
@@ -28,6 +31,7 @@ pub use search::{
 };
 pub use shortcuts::{Action, KeyBinding, ShortcutManager, VimMode};
 pub use state::{ActivePanel, AppState, FileOperation, PanelState, SortMode};
+pub use theme::{Theme, ThemeManager, ThemeMode};
 pub use vfs::{RemoteCredentials, VfsEntry, VfsEntryType, VfsPath, VfsProvider, VirtualFileSystem};
 pub use virtual_scroll::{
     VirtualScrollConfig, VirtualScrollManager, VirtualScrollStats, VirtualScroller,

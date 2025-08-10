@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 
 /// Keyboard shortcut definition
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -52,12 +53,14 @@ impl KeyBinding {
         let binding = Self::new(code, modifiers);
         self.code == binding.code && self.modifiers == binding.modifiers
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl fmt::Display for KeyBinding {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.modifiers.is_empty() {
-            self.code.clone()
+            write!(f, "{}", self.code)
         } else {
-            format!("{}+{}", self.modifiers.join("+"), self.code)
+            write!(f, "{}+{}", self.modifiers.join("+"), self.code)
         }
     }
 }
@@ -191,6 +194,12 @@ pub struct ShortcutManager {
     shortcuts: HashMap<KeyBinding, Action>,
     vim_mode: Option<VimMode>,
     custom_shortcuts: HashMap<KeyBinding, Action>,
+}
+
+impl Default for ShortcutManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ShortcutManager {

@@ -8,6 +8,7 @@ use tokio::sync::RwLock;
 pub struct UpdateManager {
     updater: Arc<RwLock<AutoUpdater>>,
     status: Arc<RwLock<UpdateStatus>>,
+    #[allow(dead_code)]
     current_version: Version,
 }
 
@@ -78,6 +79,7 @@ impl UpdateManager {
     }
 
     /// Download update
+    #[allow(dead_code)]
     pub async fn download_update(&self, update_info: UpdateInfo) -> Result<()> {
         let updater = self.updater.read().await;
         let status = self.status.clone();
@@ -140,16 +142,19 @@ impl UpdateManager {
     }
 
     /// Get current update status
+    #[allow(dead_code)]
     pub async fn get_status(&self) -> UpdateStatus {
         self.status.read().await.clone()
     }
 
     /// Get current version
+    #[allow(dead_code)]
     pub fn get_current_version(&self) -> &Version {
         &self.current_version
     }
 
     /// Enable/disable auto-updates
+    #[allow(dead_code)]
     pub async fn set_auto_update(&self, enabled: bool) -> Result<()> {
         // Save to config
         let config_dir =
@@ -173,6 +178,7 @@ impl UpdateManager {
     }
 
     /// Clean up old update files
+    #[allow(dead_code)]
     pub async fn cleanup(&self) -> Result<()> {
         let updater = self.updater.read().await;
         updater.cleanup_old_updates()
@@ -180,6 +186,7 @@ impl UpdateManager {
 }
 
 /// Check for updates in background
+#[allow(dead_code)]
 pub async fn background_update_check(manager: Arc<UpdateManager>) {
     loop {
         // Wait for check interval (24 hours by default)

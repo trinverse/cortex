@@ -30,7 +30,7 @@ impl Downloader {
         progress_callback: impl Fn(u64, u64) + Send + 'static,
     ) -> Result<PathBuf> {
         // Extract filename from URL
-        let filename = url.split('/').last().context("Invalid download URL")?;
+        let filename = url.split('/').next_back().context("Invalid download URL")?;
 
         let download_path = self.download_dir.join(filename);
         let temp_path = self.download_dir.join(format!("{}.tmp", filename));
@@ -132,7 +132,7 @@ impl Downloader {
             .headers()
             .get("content-range")
             .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.split('/').last())
+            .and_then(|s| s.split('/').next_back())
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(existing_size);
 

@@ -41,6 +41,12 @@ pub struct SearchProgressInfo {
     pub found: usize,
 }
 
+impl Default for SearchDialog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SearchDialog {
     pub fn new() -> Self {
         Self {
@@ -212,12 +218,7 @@ impl SearchDialog {
             SearchType::Contains => options.push("Search type: Contains".to_string()),
         }
 
-        let options_list = List::new(
-            options
-                .into_iter()
-                .map(|o| ListItem::new(o))
-                .collect::<Vec<_>>(),
-        );
+        let options_list = List::new(options.into_iter().map(ListItem::new).collect::<Vec<_>>());
         frame.render_widget(options_list, options_inner);
 
         // Help
