@@ -19,7 +19,7 @@ pub use config_dialog::{ConfigDialog, ConfigTab};
 pub use connection_dialog::{ConnectionDialog, ConnectionType};
 pub use dialogs::{
     ConfirmDialog, Dialog, ErrorDialog, HelpDialog, InputDialog, ProgressDialog, SaveChoice,
-    SaveConfirmDialog,
+    SaveConfirmDialog, ThemeSelectionDialog,
 };
 pub use editor::TextEditor;
 pub use editor_dialog::EditorDialog;

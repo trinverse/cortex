@@ -10,7 +10,7 @@ use cortex_tui::{
     ContextMenuAction, Dialog, EditorDialog, ErrorDialog, Event, EventHandler, FileViewer,
     FilterDialog, HelpDialog, InputDialog, MouseAction, MouseHandler, MouseRegionManager,
     NotificationManager, NotificationType, PluginDialog, Position, ProgressDialog, SaveChoice,
-    SaveConfirmDialog, SearchDialog, SearchState, TextEditor, ViewerDialog, UI,
+    SaveConfirmDialog, SearchDialog, SearchState, TextEditor, ThemeSelectionDialog, ViewerDialog, UI,
 };
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, KeyCode, KeyModifiers},
@@ -179,10 +179,11 @@ impl App {
             eprintln!("Warning: Failed to initialize file monitor: {}", e);
         }
 
-        // Start cache refresher
-        let cache_refresher = Arc::new(CacheRefresher::new(state.directory_cache.clone()));
-        cache_refresher.start().await;
-        state.cache_refresher = Some(cache_refresher.clone());
+        // Start cache refresher - disabled by default to prevent resource usage
+        // Can be enabled with /monitor command
+        // let cache_refresher = Arc::new(CacheRefresher::new(state.directory_cache.clone()));
+        // cache_refresher.start().await;
+        // state.cache_refresher = Some(cache_refresher.clone());
 
         let events = EventHandler::new(Duration::from_millis(100));
 
@@ -653,9 +654,22 @@ impl App {
 
             // Control keys
             (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
-                // Properly cleanup and exit
-                self.cleanup_and_exit().await?;
-                return Ok(false);
+                // Stop file monitoring first to prevent loops
+                if let Some(ref monitor) = self.state.file_monitor.take() {
+                    let _ = monitor.stop().await;
+                }
+                // Stop cache refresher if running
+                if let Some(ref refresher) = self.state.cache_refresher.take() {
+                    refresher.stop();
+                }
+                // Cleanup terminal and exit
+                disable_raw_mode()?;
+                execute!(
+                    self.terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                std::process::exit(0);
             }
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 if self.state.command_line.is_empty() {
@@ -820,12 +834,54 @@ impl App {
 
         match command {
             "exit" | "quit" | "q" => {
-                // Properly cleanup and exit
-                self.cleanup_and_exit().await?;
+                // Stop file monitoring first to prevent loops
+                if let Some(ref monitor) = self.state.file_monitor.take() {
+                    let _ = monitor.stop().await;
+                }
+                // Stop cache refresher
+                if let Some(ref refresher) = self.state.cache_refresher.take() {
+                    refresher.stop();
+                }
+                // Cleanup terminal and exit immediately
+                disable_raw_mode()?;
+                execute!(
+                    self.terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
                 std::process::exit(0);
             }
             "help" | "?" => {
                 self.dialog = Some(Dialog::Help(HelpDialog::new()));
+            }
+            "restart" => {
+                // Stop file monitoring first
+                if let Some(ref monitor) = self.state.file_monitor.take() {
+                    let _ = monitor.stop().await;
+                }
+                // Stop cache refresher
+                if let Some(ref refresher) = self.state.cache_refresher.take() {
+                    refresher.stop();
+                }
+                // Cleanup terminal
+                disable_raw_mode()?;
+                execute!(
+                    self.terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                
+                // Get the current executable path
+                let exe = std::env::current_exe()?;
+                let args: Vec<String> = std::env::args().skip(1).collect();
+                
+                // Spawn a new instance
+                std::process::Command::new(exe)
+                    .args(&args)
+                    .spawn()?;
+                
+                // Exit current instance
+                std::process::exit(0);
             }
             "reload" | "refresh" => {
                 Self::refresh_panel(self.state.active_panel_mut())?;
@@ -986,6 +1042,12 @@ impl App {
                     "Hidden files: {}",
                     if show_hidden { "shown" } else { "hidden" }
                 ));
+            }
+            "theme" => {
+                // Show theme selection dialog
+                self.dialog = Some(Dialog::ThemeSelection(ThemeSelectionDialog::new(
+                    self.state.theme_manager.get_current_theme().mode,
+                )));
             }
             "home" => {
                 if let Some(home) = dirs::home_dir() {
@@ -1789,6 +1851,29 @@ impl App {
                                 }
                             }
                         }
+                    }
+                    _ => {}
+                }
+            }
+            Some(Dialog::ThemeSelection(dialog)) => {
+                match key.code {
+                    KeyCode::Up => {
+                        dialog.move_up();
+                    }
+                    KeyCode::Down => {
+                        dialog.move_down();
+                    }
+                    KeyCode::Enter => {
+                        let selected_theme = dialog.get_selected_theme();
+                        self.state.theme_manager.set_theme(selected_theme);
+                        self.state.set_status_message(format!(
+                            "Theme changed to: {}",
+                            dialog.themes[dialog.selected_index].1
+                        ));
+                        self.dialog = None;
+                    }
+                    KeyCode::Esc => {
+                        self.dialog = None;
                     }
                     _ => {}
                 }
