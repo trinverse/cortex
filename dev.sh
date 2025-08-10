@@ -15,7 +15,7 @@ MAGENTA='\033[0;35m'
 NC='\033[0m' # No Color
 
 # Default values
-MODE="watch"
+MODE="simple"  # Changed default to simple mode - no dependencies needed
 BUILD_TYPE="debug"
 
 # Parse command line arguments
@@ -25,8 +25,8 @@ while [[ $# -gt 0 ]]; do
             BUILD_TYPE="release"
             shift
             ;;
-        --simple)
-            MODE="simple"
+        --watch)
+            MODE="watch"
             shift
             ;;
         --hot)
@@ -40,11 +40,11 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --release    Build in release mode (optimized but slower build)"
-            echo "  --simple     Use simple file watching (no cargo-watch needed)"
+            echo "  --watch      Use cargo-watch for instant rebuilds (requires cargo-watch)"
             echo "  --hot        Use hot reload mode (rebuild in background)"
             echo "  --help       Show this help message"
             echo ""
-            echo "Default: Uses cargo-watch for automatic rebuild and run"
+            echo "Default: Simple mode - no extra tools required!"
             exit 0
             ;;
         *)
@@ -61,6 +61,16 @@ echo -e "${CYAN}║     🚀 Cortex Development Mode 🚀     ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
 echo ""
 
+# Check for cargo-watch only if watch mode is requested
+if [ "$MODE" = "watch" ]; then
+    if ! cargo help watch &> /dev/null; then
+        echo -e "${YELLOW}⚠️  cargo-watch is not available${NC}"
+        echo -e "${GREEN}Switching to simple mode (works great without dependencies!)${NC}"
+        MODE="simple"
+        echo ""
+    fi
+fi
+
 # Set build flags based on type
 if [ "$BUILD_TYPE" = "release" ]; then
     BUILD_FLAGS="--release"
@@ -74,26 +84,63 @@ fi
 
 # Function to check if cargo-watch is installed
 check_cargo_watch() {
-    if ! command -v cargo-watch &> /dev/null; then
-        echo -e "${YELLOW}cargo-watch not found.${NC}"
-        echo -e "Would you like to install it? (y/n)"
-        read -r response
-        if [[ "$response" == "y" ]]; then
+    # Check if cargo watch command exists
+    if cargo watch --version &> /dev/null; then
+        return 0
+    fi
+    
+    echo -e "${YELLOW}cargo-watch not found.${NC}"
+    echo -e "${YELLOW}Would you like to:${NC}"
+    echo "  1) Try installing cargo-watch"
+    echo "  2) Use simple mode (no installation needed)"
+    echo "  3) Use hot reload mode"
+    echo ""
+    echo -n "Choose [1-3]: "
+    read -r response
+    
+    case $response in
+        1)
             echo "Installing cargo-watch..."
-            cargo install cargo-watch
-            return 0
-        else
-            echo "Falling back to simple mode..."
+            if cargo install cargo-watch; then
+                echo -e "${GREEN}✓ cargo-watch installed successfully${NC}"
+                return 0
+            else
+                echo -e "${RED}Failed to install cargo-watch${NC}"
+                echo -e "${YELLOW}Falling back to simple mode...${NC}"
+                MODE="simple"
+                return 1
+            fi
+            ;;
+        2)
+            echo -e "${BLUE}Using simple mode...${NC}"
             MODE="simple"
             return 1
-        fi
-    fi
-    return 0
+            ;;
+        3)
+            echo -e "${MAGENTA}Using hot reload mode...${NC}"
+            MODE="hot"
+            return 1
+            ;;
+        *)
+            echo -e "${YELLOW}Invalid choice. Using simple mode...${NC}"
+            MODE="simple"
+            return 1
+            ;;
+    esac
 }
 
 # Function for simple file watching
 simple_watch() {
-    echo -e "${BLUE}Simple watch mode - checking for changes every 2 seconds${NC}"
+    echo -e "${GREEN}📦 Simple Development Mode${NC}"
+    echo -e "${BLUE}No external tools required!${NC}"
+    echo ""
+    echo -e "${YELLOW}How it works:${NC}"
+    echo "  1. Builds and runs Cortex"
+    echo "  2. When you exit (Ctrl+Q), checks for file changes"
+    echo "  3. Automatically rebuilds if changes detected"
+    echo "  4. Restarts Cortex with your changes"
+    echo ""
+    echo -e "${CYAN}Press Ctrl+C here to stop development mode${NC}"
     echo ""
     
     get_checksum() {
@@ -107,31 +154,65 @@ simple_watch() {
     }
     
     LAST_CHECKSUM=$(get_checksum)
+    FIRST_RUN=true
     
     while true; do
-        echo -e "${GREEN}Building and running Cortex...${NC}"
-        cargo build $BUILD_FLAGS
+        if [ "$FIRST_RUN" = true ]; then
+            echo -e "${GREEN}🔨 Building Cortex...${NC}"
+            FIRST_RUN=false
+        else
+            echo -e "${GREEN}🔄 Rebuilding with your changes...${NC}"
+        fi
         
-        echo -e "${CYAN}═══════════════════════════════════════${NC}"
-        echo -e "${GREEN}✓ Build complete! Starting Cortex...${NC}"
-        echo -e "${CYAN}═══════════════════════════════════════${NC}"
-        echo ""
-        
-        cargo run $BUILD_FLAGS --bin cortex
-        
-        echo ""
-        echo -e "${YELLOW}Cortex exited. Checking for changes...${NC}"
-        
-        # Wait for changes
-        while true; do
-            CURRENT_CHECKSUM=$(get_checksum)
-            if [ "$CURRENT_CHECKSUM" != "$LAST_CHECKSUM" ]; then
-                LAST_CHECKSUM=$CURRENT_CHECKSUM
-                echo -e "${GREEN}Changes detected! Rebuilding...${NC}"
-                break
+        if cargo build $BUILD_FLAGS; then
+            echo -e "${CYAN}═══════════════════════════════════════${NC}"
+            echo -e "${GREEN}✅ Build successful! Starting Cortex...${NC}"
+            echo -e "${CYAN}═══════════════════════════════════════${NC}"
+            echo ""
+            
+            # Run Cortex
+            cargo run $BUILD_FLAGS --bin cortex
+            
+            echo ""
+            echo -e "${YELLOW}Cortex exited. Checking for changes...${NC}"
+            
+            # Wait for changes
+            CHANGES_FOUND=false
+            for i in {1..5}; do
+                CURRENT_CHECKSUM=$(get_checksum)
+                if [ "$CURRENT_CHECKSUM" != "$LAST_CHECKSUM" ]; then
+                    LAST_CHECKSUM=$CURRENT_CHECKSUM
+                    echo -e "${GREEN}✨ Changes detected!${NC}"
+                    CHANGES_FOUND=true
+                    break
+                fi
+                if [ $i -lt 5 ]; then
+                    echo -n "."
+                    sleep 1
+                fi
+            done
+            
+            if [ "$CHANGES_FOUND" = false ]; then
+                echo ""
+                echo -e "${BLUE}No changes detected. Restarting...${NC}"
             fi
-            sleep 2
-        done
+        else
+            echo -e "${RED}❌ Build failed! Fix errors and save to retry.${NC}"
+            echo -e "${YELLOW}Waiting for file changes...${NC}"
+            
+            # Wait for changes before retrying
+            while true; do
+                CURRENT_CHECKSUM=$(get_checksum)
+                if [ "$CURRENT_CHECKSUM" != "$LAST_CHECKSUM" ]; then
+                    LAST_CHECKSUM=$CURRENT_CHECKSUM
+                    echo -e "${GREEN}Changes detected! Retrying build...${NC}"
+                    break
+                fi
+                sleep 2
+            done
+        fi
+        
+        echo ""
     done
 }
 
@@ -228,11 +309,10 @@ cargo_watch_mode() {
 }
 
 # Main execution
-echo -e "${BLUE}Mode: $MODE${NC}"
-echo ""
-
 case $MODE in
     watch)
+        echo -e "${BLUE}Mode: cargo-watch${NC}"
+        echo ""
         if check_cargo_watch; then
             cargo_watch_mode
         else
