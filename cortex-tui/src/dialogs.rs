@@ -221,6 +221,8 @@ impl HelpDialog {
             ("F6".to_string(), "Move/rename files".to_string()),
             ("F7".to_string(), "Create directory".to_string()),
             ("F8".to_string(), "Delete files".to_string()),
+            ("F9".to_string(), "Next theme".to_string()),
+            ("F10".to_string(), "Toggle random theme".to_string()),
             ("Space".to_string(), "Mark/unmark file".to_string()),
             ("Ctrl+A".to_string(), "Mark all".to_string()),
             ("Ctrl+U".to_string(), "Unmark all".to_string()),

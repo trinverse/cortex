@@ -304,6 +304,7 @@ pub struct AppState {
     pub auto_reload_enabled: bool,
     pub directory_cache: Arc<DirectoryCache>,
     pub cache_refresher: Option<Arc<CacheRefresher>>,
+    pub theme_manager: crate::ThemeManager,
 }
 
 #[derive(Debug, Clone)]
@@ -380,6 +381,7 @@ impl AppState {
             auto_reload_enabled,
             directory_cache,
             cache_refresher: None,
+            theme_manager: crate::ThemeManager::new(crate::ThemeMode::Dark),
         })
     }
 

@@ -32,6 +32,7 @@ sevenz-rust = { workspace = true }
 cortex-plugins = { path = "../cortex-plugins" }
 cortex-platform = { path = "../cortex-platform" }
 crossterm = { workspace = true }
+ratatui = { workspace = true }
 
 # [features]
 # default = []

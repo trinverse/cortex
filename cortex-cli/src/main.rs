@@ -277,6 +277,9 @@ impl App {
                     self.terminal.autoresize()?;
                 }
                 Event::Tick => {
+                    // Update theme manager for random rotation
+                    self.state.theme_manager.update();
+                    
                     // Check if panels need refreshing due to file system changes
                     if self.refresh_needed && self.state.is_file_monitoring_active() {
                         if let Err(e) = Self::refresh_panel_with_cache(
@@ -573,6 +576,24 @@ impl App {
                 if let Some(operation) = OperationManager::prepare_delete(&self.state).await {
                     self.state.pending_operation = Some(operation.clone());
                     self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            (KeyCode::F(9), _) => {
+                // Cycle through themes
+                self.state.theme_manager.next_theme();
+                self.state.set_status_message(&format!(
+                    "Theme changed to: {:?}",
+                    self.state.theme_manager.get_current_theme().mode
+                ));
+            }
+            (KeyCode::F(10), _) => {
+                // Open theme selector or toggle random mode
+                if self.state.theme_manager.get_current_theme().mode == cortex_core::ThemeMode::Random {
+                    self.state.theme_manager.set_theme(cortex_core::ThemeMode::Dark);
+                    self.state.set_status_message("Random theme rotation disabled");
+                } else {
+                    self.state.theme_manager.set_theme(cortex_core::ThemeMode::Random);
+                    self.state.set_status_message("Random theme rotation enabled (changes every 10 minutes)");
                 }
             }
 

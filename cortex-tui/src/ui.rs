@@ -27,30 +27,27 @@ impl UI {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(chunks[0]);
 
+        let theme = app.theme_manager.get_current_theme();
         Self::draw_panel(
             frame,
             panels[0],
             &app.left_panel,
             app.active_panel == ActivePanel::Left,
+            theme,
         );
         Self::draw_panel(
             frame,
             panels[1],
             &app.right_panel,
             app.active_panel == ActivePanel::Right,
+            theme,
         );
-        Self::draw_command_line(frame, chunks[1], app);
-        Self::draw_status_bar(frame, chunks[2], app);
+        Self::draw_command_line(frame, chunks[1], app, theme);
+        Self::draw_status_bar(frame, chunks[2], app, theme);
     }
 
-    fn draw_panel(frame: &mut Frame, area: Rect, panel: &PanelState, is_active: bool) {
-        let border_style = if is_active {
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Gray)
-        };
+    fn draw_panel(frame: &mut Frame, area: Rect, panel: &PanelState, is_active: bool, theme: &cortex_core::Theme) {
+        let border_style = theme.get_border_style(is_active);
 
         let title = if let Some(ref filter) = panel.filter {
             if panel.is_using_vfs() {
@@ -126,7 +123,7 @@ impl UI {
                     let absolute_idx = start_idx + idx;
                     let is_selected = absolute_idx == panel.selected_index;
 
-                    let style = Self::get_vfs_entry_style(entry, is_selected, is_active);
+                    let style = Self::get_vfs_entry_style(entry, is_selected, is_active, theme);
                     let content = Self::format_vfs_entry(entry, inner_area.width as usize);
 
                     ListItem::new(Line::from(vec![Span::styled(content, style)]))
@@ -145,7 +142,7 @@ impl UI {
                     let is_selected = absolute_idx == panel.selected_index;
                     let is_marked = panel.is_marked(&entry.path);
 
-                    let style = Self::get_entry_style(entry, is_selected, is_marked, is_active);
+                    let style = Self::get_entry_style(entry, is_selected, is_marked, is_active, theme);
                     let content = Self::format_entry(entry, inner_area.width as usize);
 
                     ListItem::new(Line::from(vec![Span::styled(content, style)]))
@@ -162,39 +159,20 @@ impl UI {
         is_selected: bool,
         is_marked: bool,
         panel_active: bool,
+        theme: &cortex_core::Theme,
     ) -> Style {
-        let mut style = Style::default();
-
-        style = match entry.file_type {
-            FileType::Directory => style.fg(Color::Blue).add_modifier(Modifier::BOLD),
-            FileType::Symlink => style.fg(Color::Cyan),
-            FileType::File => {
-                if let Some(ext) = &entry.extension {
-                    match ext.as_str() {
-                        "rs" | "go" | "py" | "js" | "ts" | "java" | "c" | "cpp" | "h" => {
-                            style.fg(Color::Green)
-                        }
-                        "md" | "txt" | "doc" | "pdf" => style.fg(Color::Yellow),
-                        "jpg" | "png" | "gif" | "svg" => style.fg(Color::Magenta),
-                        "zip" | "tar" | "gz" | "rar" | "7z" => style.fg(Color::Red),
-                        _ => style.fg(Color::White),
-                    }
-                } else {
-                    style.fg(Color::White)
-                }
-            }
-            FileType::Other => style.fg(Color::Gray),
-        };
+        let mut style = theme.get_file_style(&entry.file_type, entry.extension.as_ref());
 
         if is_marked {
-            style = style.add_modifier(Modifier::UNDERLINED);
+            style = style.fg(theme.marked).add_modifier(Modifier::UNDERLINED | Modifier::BOLD);
         }
 
         if is_selected {
+            let selected_style = theme.get_selected_style(panel_active);
+            // Preserve the foreground color but use the selected background
+            style = style.bg(selected_style.bg.unwrap_or(Color::Reset));
             if panel_active {
-                style = style.bg(Color::Blue).add_modifier(Modifier::BOLD);
-            } else {
-                style = style.bg(Color::DarkGray);
+                style = style.add_modifier(Modifier::BOLD);
             }
         }
 
@@ -246,36 +224,37 @@ impl UI {
         result
     }
 
-    fn get_vfs_entry_style(entry: &VfsEntry, is_selected: bool, panel_active: bool) -> Style {
+    fn get_vfs_entry_style(entry: &VfsEntry, is_selected: bool, panel_active: bool, theme: &cortex_core::Theme) -> Style {
         let mut style = Style::default();
 
         style = match entry.entry_type {
-            VfsEntryType::Directory => style.fg(Color::Blue).add_modifier(Modifier::BOLD),
-            VfsEntryType::Archive => style.fg(Color::Red).add_modifier(Modifier::BOLD),
-            VfsEntryType::Symlink => style.fg(Color::Cyan),
+            VfsEntryType::Directory => style.fg(theme.directory).add_modifier(Modifier::BOLD),
+            VfsEntryType::Archive => style.fg(theme.archive).add_modifier(Modifier::BOLD),
+            VfsEntryType::Symlink => style.fg(theme.symlink),
             VfsEntryType::File => {
                 // Try to infer type from extension
-                if let Some(ext) = entry.name.split('.').last() {
+                let extension = entry.name.split('.').last().map(String::from);
+                if let Some(ext) = extension.as_ref() {
                     match ext.to_lowercase().as_str() {
                         "rs" | "go" | "py" | "js" | "ts" | "java" | "c" | "cpp" | "h" => {
-                            style.fg(Color::Green)
+                            style.fg(theme.source_code)
                         }
-                        "md" | "txt" | "doc" | "pdf" => style.fg(Color::Yellow),
-                        "jpg" | "png" | "gif" | "svg" => style.fg(Color::Magenta),
-                        "zip" | "tar" | "gz" | "rar" | "7z" => style.fg(Color::Red),
-                        _ => style.fg(Color::White),
+                        "md" | "txt" | "doc" | "pdf" => style.fg(theme.document),
+                        "jpg" | "png" | "gif" | "svg" => style.fg(theme.image),
+                        "zip" | "tar" | "gz" | "rar" | "7z" => style.fg(theme.archive),
+                        _ => style.fg(theme.regular_file),
                     }
                 } else {
-                    style.fg(Color::White)
+                    style.fg(theme.regular_file)
                 }
             }
         };
 
         if is_selected {
+            let selected_style = theme.get_selected_style(panel_active);
+            style = style.bg(selected_style.bg.unwrap_or(Color::Reset));
             if panel_active {
-                style = style.bg(Color::Blue).add_modifier(Modifier::BOLD);
-            } else {
-                style = style.bg(Color::DarkGray);
+                style = style.add_modifier(Modifier::BOLD);
             }
         }
 
@@ -320,7 +299,7 @@ impl UI {
         }
     }
 
-    fn draw_command_line(frame: &mut Frame, area: Rect, app: &AppState) {
+    fn draw_command_line(frame: &mut Frame, area: Rect, app: &AppState, theme: &cortex_core::Theme) {
         let title = if app.command_line.starts_with('/') {
             " Special Commands (/ for menu) "
         } else {
@@ -330,14 +309,14 @@ impl UI {
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(Style::default().fg(theme.active_border));
 
         let inner_area = block.inner(area);
         frame.render_widget(block, area);
 
         let prompt = "$ ";
         let text = format!("{}{}", prompt, app.command_line);
-        let paragraph = Paragraph::new(text).style(Style::default().fg(Color::White));
+        let paragraph = Paragraph::new(text).style(Style::default().fg(theme.command_line_fg).bg(theme.command_line_bg));
 
         frame.render_widget(paragraph, inner_area);
 
@@ -348,7 +327,7 @@ impl UI {
         ));
     }
 
-    fn draw_status_bar(frame: &mut Frame, area: Rect, app: &AppState) {
+    fn draw_status_bar(frame: &mut Frame, area: Rect, app: &AppState, theme: &cortex_core::Theme) {
         let active_panel = app.active_panel();
         let current_entry = active_panel.current_entry();
 
@@ -376,13 +355,13 @@ impl UI {
         let padding = area.width.saturating_sub((left_width + right_width) as u16) as usize;
 
         let status_line = Line::from(vec![
-            Span::styled(left_text, Style::default().fg(Color::White)),
+            Span::styled(left_text, Style::default().fg(theme.status_bar_fg)),
             Span::raw(" ".repeat(padding)),
-            Span::styled(right_text, Style::default().fg(Color::White)),
+            Span::styled(right_text, Style::default().fg(theme.status_bar_fg)),
         ]);
 
         let paragraph = Paragraph::new(status_line)
-            .style(Style::default().bg(Color::DarkGray))
+            .style(Style::default().bg(theme.status_bar_bg).fg(theme.status_bar_fg))
             .alignment(Alignment::Left);
 
         frame.render_widget(paragraph, area);
