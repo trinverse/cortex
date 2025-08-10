@@ -682,7 +682,7 @@ impl App {
                     LeaveAlternateScreen,
                     DisableMouseCapture
                 )?;
-                std::process::exit(0);
+                return Ok(());
             }
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 if self.state.command_line.is_empty() {
