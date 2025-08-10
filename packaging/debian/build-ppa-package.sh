@@ -194,12 +194,11 @@ override_dh_auto_clean:
 EOF
     chmod +x debian/rules
 
-    # Create debian/compat
-    echo "12" > debian/compat
-
     # Create debian/source/format
     mkdir -p debian/source
     echo "3.0 (quilt)" > debian/source/format
+    
+    # Note: We don't create debian/compat because we use debhelper-compat in control file
 
     # Create initial changelog
     cat > debian/changelog << EOF
