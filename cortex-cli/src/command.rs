@@ -15,6 +15,7 @@ impl CommandProcessor {
     /// %D - opposite panel directory
     /// %p - full path of current file
     /// %P - full paths of marked files
+    #[allow(dead_code)]
     pub fn expand_command(command: &str, state: &AppState) -> String {
         let mut expanded = command.to_string();
         let active_panel = state.active_panel();
@@ -70,6 +71,7 @@ impl CommandProcessor {
         expanded
     }
 
+    #[allow(dead_code)]
     pub async fn execute_command(command: &str, state: &AppState) -> Result<String> {
         let expanded = Self::expand_command(command, state);
 
@@ -108,6 +110,7 @@ impl CommandProcessor {
         }
     }
 
+    #[allow(dead_code)]
     async fn execute_external_command(command: &str) -> Result<String> {
         let output = if cfg!(target_os = "windows") {
             AsyncCommand::new("cmd")
@@ -137,9 +140,13 @@ impl CommandProcessor {
         output_sender: mpsc::Sender<String>,
     ) -> Result<i32> {
         // Send start message
-        let _ = output_sender.send(format!("[STARTED] Running: {}", command)).await;
-        let _ = output_sender.send(format!("[WORKING DIR] {}", current_dir.display())).await;
-        
+        let _ = output_sender
+            .send(format!("[STARTED] Running: {}", command))
+            .await;
+        let _ = output_sender
+            .send(format!("[WORKING DIR] {}", current_dir.display()))
+            .await;
+
         let mut child = if cfg!(target_os = "windows") {
             AsyncCommand::new("cmd")
                 .args(["/C", command])
@@ -161,7 +168,7 @@ impl CommandProcessor {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             let sender_clone = output_sender.clone();
-            
+
             Some(tokio::spawn(async move {
                 while let Ok(Some(line)) = lines.next_line().await {
                     if !line.trim().is_empty() {
@@ -178,7 +185,7 @@ impl CommandProcessor {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
             let sender_clone = output_sender.clone();
-            
+
             Some(tokio::spawn(async move {
                 while let Ok(Some(line)) = lines.next_line().await {
                     if !line.trim().is_empty() {
@@ -193,7 +200,7 @@ impl CommandProcessor {
         // Wait for process to complete
         let status = child.wait().await?;
         let exit_code = status.code().unwrap_or(-1);
-        
+
         // Wait for output streams to finish
         if let Some(handle) = stdout_handle {
             let _ = handle.await;
@@ -201,10 +208,15 @@ impl CommandProcessor {
         if let Some(handle) = stderr_handle {
             let _ = handle.await;
         }
-        
+
         // Send completion message
-        let _ = output_sender.send(format!("[COMPLETED] Process finished with exit code: {}", exit_code)).await;
-        
+        let _ = output_sender
+            .send(format!(
+                "[COMPLETED] Process finished with exit code: {}",
+                exit_code
+            ))
+            .await;
+
         Ok(exit_code)
     }
 

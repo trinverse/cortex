@@ -53,7 +53,6 @@ impl KeyBinding {
         let binding = Self::new(code, modifiers);
         self.code == binding.code && self.modifiers == binding.modifiers
     }
-
 }
 
 impl fmt::Display for KeyBinding {

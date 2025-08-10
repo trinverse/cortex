@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame,
 };
 use unicode_width::UnicodeWidthStr;
@@ -19,11 +19,11 @@ impl UI {
         let prompt_width = prompt.width();
         let border_width = 2; // Left and right borders
         let available_width = terminal_width.saturating_sub(border_width);
-        
+
         let command_line_height = if available_width > prompt_width {
             let total_width = prompt_width + app.command_line.width();
-            let lines_needed = (total_width + available_width - 1) / available_width;
-            (lines_needed as u16).max(1).min(5) + 2 // +2 for borders, max 5 lines of text
+            let lines_needed = total_width.div_ceil(available_width);
+            (lines_needed as u16).clamp(1, 5) + 2 // +2 for borders, max 5 lines of text
         } else {
             3 // Default minimum height with borders
         };
@@ -49,11 +49,12 @@ impl UI {
             .constraints(constraints)
             .split(frame.area());
 
-        let (panels_area, command_output_area, command_area, status_area) = if app.command_output_visible {
-            (chunks[0], Some(chunks[1]), chunks[2], chunks[3])
-        } else {
-            (chunks[0], None, chunks[1], chunks[2])
-        };
+        let (panels_area, command_output_area, command_area, status_area) =
+            if app.command_output_visible {
+                (chunks[0], Some(chunks[1]), chunks[2], chunks[3])
+            } else {
+                (chunks[0], None, chunks[1], chunks[2])
+            };
 
         let panels = Layout::default()
             .direction(Direction::Horizontal)
@@ -75,17 +76,23 @@ impl UI {
             app.active_panel == ActivePanel::Right,
             theme,
         );
-        
+
         // Draw command output area if visible
         if let Some(output_area) = command_output_area {
             Self::draw_command_output(frame, output_area, app, theme);
         }
-        
+
         Self::draw_command_line(frame, command_area, app, theme);
         Self::draw_status_bar(frame, status_area, app, theme);
     }
 
-    fn draw_panel(frame: &mut Frame, area: Rect, panel: &PanelState, is_active: bool, theme: &cortex_core::Theme) {
+    fn draw_panel(
+        frame: &mut Frame,
+        area: Rect,
+        panel: &PanelState,
+        is_active: bool,
+        theme: &cortex_core::Theme,
+    ) {
         let border_style = theme.get_border_style(is_active);
 
         let title = if let Some(ref filter) = panel.filter {
@@ -179,7 +186,8 @@ impl UI {
                     let is_selected = absolute_idx == panel.selected_index;
                     let is_marked = panel.is_marked(&entry.path);
 
-                    let style = Self::get_entry_style(entry, is_selected, is_marked, is_active, theme);
+                    let style =
+                        Self::get_entry_style(entry, is_selected, is_marked, is_active, theme);
                     let content = Self::format_entry(entry, inner_area.width as usize);
 
                     ListItem::new(Line::from(vec![Span::styled(content, style)]))
@@ -201,7 +209,9 @@ impl UI {
         let mut style = theme.get_file_style(&entry.file_type, entry.extension.as_ref());
 
         if is_marked {
-            style = style.fg(theme.marked).add_modifier(Modifier::UNDERLINED | Modifier::BOLD);
+            style = style
+                .fg(theme.marked)
+                .add_modifier(Modifier::UNDERLINED | Modifier::BOLD);
         }
 
         if is_selected {
@@ -261,7 +271,12 @@ impl UI {
         result
     }
 
-    fn get_vfs_entry_style(entry: &VfsEntry, is_selected: bool, panel_active: bool, theme: &cortex_core::Theme) -> Style {
+    fn get_vfs_entry_style(
+        entry: &VfsEntry,
+        is_selected: bool,
+        panel_active: bool,
+        theme: &cortex_core::Theme,
+    ) -> Style {
         let mut style = Style::default();
 
         style = match entry.entry_type {
@@ -336,7 +351,12 @@ impl UI {
         }
     }
 
-    fn draw_command_line(frame: &mut Frame, area: Rect, app: &AppState, theme: &cortex_core::Theme) {
+    fn draw_command_line(
+        frame: &mut Frame,
+        area: Rect,
+        app: &AppState,
+        theme: &cortex_core::Theme,
+    ) {
         let title = if app.command_line.starts_with('/') {
             " Special Commands (/ for menu) "
         } else {
@@ -353,7 +373,7 @@ impl UI {
 
         let prompt = "$ ";
         let text = format!("{}{}", prompt, app.command_line);
-        
+
         // Use Paragraph with wrap for multi-line support
         let paragraph = Paragraph::new(text)
             .style(Style::default().fg(theme.command_line_fg))
@@ -366,7 +386,7 @@ impl UI {
         let width = inner_area.width as usize;
         let cursor_line = prompt_and_cursor / width;
         let cursor_col = prompt_and_cursor % width;
-        
+
         // Only show cursor if it's within the visible area
         if cursor_line < inner_area.height as usize {
             frame.set_cursor_position((
@@ -418,48 +438,72 @@ impl UI {
         let middle_width = middle_text.width();
         let right_width = right_text.width();
         let total_width = area.width as usize;
-        
+
         // Create the status line with proper spacing
-        let mut spans = vec![Span::styled(left_text, Style::default().fg(theme.status_bar_fg))];
-        
+        let mut spans = vec![Span::styled(
+            left_text,
+            Style::default().fg(theme.status_bar_fg),
+        )];
+
         if !middle_text.is_empty() {
             // Add padding before git info
-            let padding_before = ((total_width.saturating_sub(left_width + middle_width + right_width)) / 2).max(1);
+            let padding_before =
+                ((total_width.saturating_sub(left_width + middle_width + right_width)) / 2).max(1);
             spans.push(Span::raw(" ".repeat(padding_before)));
-            
+
             // Add git info with color based on status
             let git_style = if active_panel.git_info.as_ref().unwrap().is_dirty {
-                Style::default().fg(theme.warning).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.warning)
+                    .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(theme.success).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.success)
+                    .add_modifier(Modifier::BOLD)
             };
             spans.push(Span::styled(middle_text, git_style));
-            
+
             // Add padding after git info
-            let padding_after = total_width.saturating_sub(left_width + padding_before + middle_width + right_width);
+            let padding_after = total_width
+                .saturating_sub(left_width + padding_before + middle_width + right_width);
             spans.push(Span::raw(" ".repeat(padding_after)));
         } else {
             // No git info, just add padding
             let padding = total_width.saturating_sub(left_width + right_width);
             spans.push(Span::raw(" ".repeat(padding)));
         }
-        
-        spans.push(Span::styled(right_text, Style::default().fg(theme.status_bar_fg)));
-        
+
+        spans.push(Span::styled(
+            right_text,
+            Style::default().fg(theme.status_bar_fg),
+        ));
+
         let status_line = Line::from(spans);
 
         let paragraph = Paragraph::new(status_line)
-            .style(Style::default().bg(theme.status_bar_bg).fg(theme.status_bar_fg))
+            .style(
+                Style::default()
+                    .bg(theme.status_bar_bg)
+                    .fg(theme.status_bar_fg),
+            )
             .alignment(Alignment::Left);
 
         frame.render_widget(paragraph, area);
     }
 
-    fn draw_command_output(frame: &mut Frame, area: Rect, app: &AppState, theme: &cortex_core::Theme) {
+    fn draw_command_output(
+        frame: &mut Frame,
+        area: Rect,
+        app: &AppState,
+        theme: &cortex_core::Theme,
+    ) {
         let title = if app.command_running {
-            format!(" Command Output (Running...) [Ctrl+C to cancel] ")
+            " Command Output (Running...) [Ctrl+C to cancel] ".to_string()
         } else {
-            format!(" Command Output ({} lines) [O to toggle] ", app.command_output.len())
+            format!(
+                " Command Output ({} lines) [O to toggle] ",
+                app.command_output.len()
+            )
         };
 
         let block = Block::default()
@@ -470,14 +514,10 @@ impl UI {
         // Convert command output to list items, showing most recent at bottom
         let available_height = area.height.saturating_sub(2) as usize; // Account for borders
         let total_lines = app.command_output.len();
-        
+
         // Show only the lines that fit, starting from the most recent that fit
-        let start_index = if total_lines > available_height {
-            total_lines - available_height
-        } else {
-            0
-        };
-        
+        let start_index = total_lines.saturating_sub(available_height);
+
         let output_lines: Vec<ListItem> = app
             .command_output
             .iter()
@@ -493,15 +533,12 @@ impl UI {
                 } else {
                     Style::default().fg(theme.normal_text)
                 };
-                
-                ListItem::new(Line::from(vec![
-                    Span::raw(line.clone())
-                ])).style(style)
+
+                ListItem::new(Line::from(vec![Span::raw(line.clone())])).style(style)
             })
             .collect();
 
-        let list = List::new(output_lines)
-            .block(block);
+        let list = List::new(output_lines).block(block);
 
         frame.render_widget(list, area);
     }

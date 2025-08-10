@@ -4,8 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub general: GeneralConfig,
@@ -67,8 +66,7 @@ pub struct ColorConfig {
     pub symlink_fg: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KeybindingConfig {
     #[serde(default)]
     pub custom: Vec<CustomKeybinding>,
@@ -105,7 +103,6 @@ pub struct CustomKeybinding {
     pub key: String,
     pub command: String,
 }
-
 
 impl Default for GeneralConfig {
     fn default() -> Self {
@@ -144,7 +141,6 @@ impl Default for ColorConfig {
         }
     }
 }
-
 
 impl Default for PluginConfig {
     fn default() -> Self {

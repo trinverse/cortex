@@ -105,31 +105,35 @@ impl ThemeSelectionDialog {
             (cortex_core::ThemeMode::Light, "Light".to_string()),
             (cortex_core::ThemeMode::Gruvbox, "Gruvbox".to_string()),
             (cortex_core::ThemeMode::Nord, "Nord".to_string()),
-            (cortex_core::ThemeMode::Random, "Random (changes every 10 min)".to_string()),
+            (
+                cortex_core::ThemeMode::Random,
+                "Random (changes every 10 min)".to_string(),
+            ),
         ];
-        
-        let selected_index = themes.iter()
+
+        let selected_index = themes
+            .iter()
             .position(|(mode, _)| *mode == current_mode)
             .unwrap_or(0);
-        
+
         Self {
             selected_index,
             themes,
         }
     }
-    
+
     pub fn move_up(&mut self) {
         if self.selected_index > 0 {
             self.selected_index -= 1;
         }
     }
-    
+
     pub fn move_down(&mut self) {
         if self.selected_index < self.themes.len() - 1 {
             self.selected_index += 1;
         }
     }
-    
+
     pub fn get_selected_theme(&self) -> cortex_core::ThemeMode {
         self.themes[self.selected_index].0
     }
@@ -698,13 +702,13 @@ fn render_theme_selection_dialog(frame: &mut Frame, area: Rect, dialog: &ThemeSe
             } else {
                 Style::default().fg(Color::Gray)
             };
-            
+
             let content = if i == dialog.selected_index {
                 format!("  ▶ {}", name)
             } else {
                 format!("    {}", name)
             };
-            
+
             ListItem::new(Line::from(vec![Span::styled(content, style)]))
         })
         .collect();

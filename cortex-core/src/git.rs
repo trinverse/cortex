@@ -17,10 +17,10 @@ pub fn get_git_info(path: &Path) -> Option<GitInfo> {
 
     // Get current branch
     let branch = get_current_branch(path)?;
-    
+
     // Check if working directory is dirty
     let is_dirty = is_working_directory_dirty(path);
-    
+
     // Get ahead/behind counts
     let (ahead, behind) = get_ahead_behind_count(path);
 
@@ -34,7 +34,7 @@ pub fn get_git_info(path: &Path) -> Option<GitInfo> {
 
 fn is_git_repository(path: &Path) -> bool {
     Command::new("git")
-        .args(&["-C", path.to_str().unwrap_or("."), "rev-parse", "--git-dir"])
+        .args(["-C", path.to_str().unwrap_or("."), "rev-parse", "--git-dir"])
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
@@ -42,7 +42,12 @@ fn is_git_repository(path: &Path) -> bool {
 
 fn get_current_branch(path: &Path) -> Option<String> {
     let output = Command::new("git")
-        .args(&["-C", path.to_str().unwrap_or("."), "branch", "--show-current"])
+        .args([
+            "-C",
+            path.to_str().unwrap_or("."),
+            "branch",
+            "--show-current",
+        ])
         .output()
         .ok()?;
 
@@ -55,7 +60,13 @@ fn get_current_branch(path: &Path) -> Option<String> {
 
     // Fallback for detached HEAD or other states
     let output = Command::new("git")
-        .args(&["-C", path.to_str().unwrap_or("."), "rev-parse", "--abbrev-ref", "HEAD"])
+        .args([
+            "-C",
+            path.to_str().unwrap_or("."),
+            "rev-parse",
+            "--abbrev-ref",
+            "HEAD",
+        ])
         .output()
         .ok()?;
 
@@ -68,7 +79,13 @@ fn get_current_branch(path: &Path) -> Option<String> {
 
     // If still no branch, check if we're in detached HEAD state
     let output = Command::new("git")
-        .args(&["-C", path.to_str().unwrap_or("."), "rev-parse", "--short", "HEAD"])
+        .args([
+            "-C",
+            path.to_str().unwrap_or("."),
+            "rev-parse",
+            "--short",
+            "HEAD",
+        ])
         .output()
         .ok()?;
 
@@ -84,7 +101,7 @@ fn get_current_branch(path: &Path) -> Option<String> {
 
 fn is_working_directory_dirty(path: &Path) -> bool {
     Command::new("git")
-        .args(&["-C", path.to_str().unwrap_or("."), "status", "--porcelain"])
+        .args(["-C", path.to_str().unwrap_or("."), "status", "--porcelain"])
         .output()
         .map(|output| output.status.success() && !output.stdout.is_empty())
         .unwrap_or(false)
@@ -92,13 +109,13 @@ fn is_working_directory_dirty(path: &Path) -> bool {
 
 fn get_ahead_behind_count(path: &Path) -> (usize, usize) {
     let output = Command::new("git")
-        .args(&[
-            "-C", 
-            path.to_str().unwrap_or("."), 
-            "rev-list", 
-            "--left-right", 
-            "--count", 
-            "HEAD...@{upstream}"
+        .args([
+            "-C",
+            path.to_str().unwrap_or("."),
+            "rev-list",
+            "--left-right",
+            "--count",
+            "HEAD...@{upstream}",
         ])
         .output();
 
