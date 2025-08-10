@@ -18,13 +18,13 @@ impl UI {
             vec![
                 Constraint::Min(3),
                 Constraint::Length(app.command_output_height),
-                Constraint::Length(3),
+                Constraint::Length(5),  // Increased command line height
                 Constraint::Length(1),
             ]
         } else {
             vec![
                 Constraint::Min(3),
-                Constraint::Length(3),
+                Constraint::Length(5),  // Increased command line height
                 Constraint::Length(1),
             ]
         };
@@ -338,7 +338,7 @@ impl UI {
 
         let prompt = "$ ";
         let text = format!("{}{}", prompt, app.command_line);
-        let paragraph = Paragraph::new(text).style(Style::default().fg(theme.command_line_fg).bg(theme.command_line_bg));
+        let paragraph = Paragraph::new(text).style(Style::default().fg(theme.command_line_fg));
 
         frame.render_widget(paragraph, inner_area);
 
@@ -474,8 +474,7 @@ impl UI {
             .collect();
 
         let list = List::new(output_lines)
-            .block(block)
-            .style(Style::default().bg(theme.command_line_bg));
+            .block(block);
 
         frame.render_widget(list, area);
     }
