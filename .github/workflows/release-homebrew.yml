@@ -147,18 +147,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   
-  update-homebrew-tap:
-    name: Update Homebrew Tap
+  update-homebrew-formula:
+    name: Update Homebrew Formula
     needs: create-release
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout tap repository
+      - name: Checkout main repository
         uses: actions/checkout@v4
         with:
-          repository: trinverse/homebrew-cortex
           token: ${{ secrets.GITHUB_TOKEN }}
-          path: homebrew-cortex
       
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -176,8 +174,8 @@ jobs:
           SHA_LINUX_X86=$(cat artifacts/cortex-linux-x86_64/*.sha256 | cut -d' ' -f1)
           SHA_LINUX_ARM=$(cat artifacts/cortex-linux-aarch64/*.sha256 | cut -d' ' -f1)
           
-          # Create formula
-          cat > homebrew-cortex/Formula/cortex.rb << EOF
+          # Update formula in main repo
+          cat > Formula/cortex.rb << EOF
           class Cortex < Formula
             desc "Modern terminal file manager with dual-pane interface"
             homepage "https://github.com/trinverse/cortex"
@@ -216,9 +214,8 @@ jobs:
       
       - name: Commit and push
         run: |
-          cd homebrew-cortex
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add Formula/cortex.rb
-          git commit -m "Update Cortex to ${{ github.event.inputs.version || github.ref_name }}"
+          git commit -m "chore: Update Homebrew formula for ${{ github.event.inputs.version || github.ref_name }}"
           git push
