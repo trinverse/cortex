@@ -16,7 +16,11 @@ use cortex_tui::{
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    style::{Color as CrosstermColor, ResetColor, SetBackgroundColor},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
+        LeaveAlternateScreen,
+    },
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{io, path::PathBuf, time::Duration};
@@ -141,9 +145,14 @@ impl App {
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
 
         let backend = CrosstermBackend::new(stdout);
-        let terminal = Terminal::new(backend)?;
+        let mut terminal = Terminal::new(backend)?;
 
         let mut state = AppState::new()?;
+
+        // Set initial terminal background color based on theme
+        let theme = state.theme_manager.get_current_theme();
+        Self::set_terminal_background(&mut terminal, theme)?;
+        terminal.clear()?;
 
         if let Some(path) = initial_path {
             if path.is_dir() {
@@ -622,10 +631,11 @@ impl App {
             (KeyCode::F(9), _) => {
                 // Cycle through themes
                 self.state.theme_manager.next_theme();
-                self.state.set_status_message(format!(
-                    "Theme changed to: {:?}",
-                    self.state.theme_manager.get_current_theme().mode
-                ));
+                let theme = self.state.theme_manager.get_current_theme();
+                Self::set_terminal_background(&mut self.terminal, theme)?;
+                self.terminal.clear()?;
+                self.state
+                    .set_status_message(format!("Theme changed to: {:?}", theme.mode));
             }
             (KeyCode::F(10), _) => {
                 // Open theme selector or toggle random mode
@@ -856,7 +866,12 @@ impl App {
                 if let Some(ref refresher) = self.state.cache_refresher.take() {
                     refresher.stop();
                 }
-                // Cleanup terminal and exit immediately
+                // Reset colors and cleanup terminal before exit
+                execute!(
+                    self.terminal.backend_mut(),
+                    ResetColor,
+                    Clear(ClearType::All)
+                )?;
                 disable_raw_mode()?;
                 execute!(
                     self.terminal.backend_mut(),
@@ -2648,6 +2663,25 @@ impl App {
         Ok(())
     }
 
+    fn set_terminal_background(
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+        theme: &cortex_core::Theme,
+    ) -> Result<()> {
+        // Convert ratatui Color to crossterm Color
+        let bg_color = match theme.background {
+            ratatui::style::Color::Rgb(r, g, b) => CrosstermColor::Rgb { r, g, b },
+            ratatui::style::Color::Reset => CrosstermColor::Reset,
+            _ => CrosstermColor::Reset, // Fallback for other color types
+        };
+
+        execute!(
+            terminal.backend_mut(),
+            SetBackgroundColor(bg_color),
+            Clear(ClearType::All)
+        )?;
+        Ok(())
+    }
+
     async fn cleanup_and_exit(&mut self) -> Result<()> {
         // Stop file monitoring if active
         if let Some(ref monitor) = self.state.file_monitor {
@@ -2655,6 +2689,13 @@ impl App {
                 log::warn!("Failed to stop file monitor: {}", e);
             }
         }
+
+        // Reset terminal colors before exit
+        execute!(
+            self.terminal.backend_mut(),
+            ResetColor,
+            Clear(ClearType::All)
+        )?;
 
         // Cleanup terminal
         disable_raw_mode()?;

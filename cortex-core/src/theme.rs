@@ -15,6 +15,10 @@ pub enum ThemeMode {
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub mode: ThemeMode,
+    // Background colors
+    pub background: Color,       // Main terminal background
+    pub panel_background: Color, // Panel area background
+
     // Panel colors
     pub active_border: Color,
     pub inactive_border: Color,
@@ -56,8 +60,10 @@ impl Theme {
     pub fn dark() -> Self {
         Self {
             mode: ThemeMode::Dark,
+            background: Color::Rgb(29, 32, 33), // Very dark gray background
+            panel_background: Color::Rgb(33, 36, 37), // Slightly lighter for panels
             active_border: Color::Rgb(139, 233, 253), // Bright cyan
-            inactive_border: Color::Rgb(68, 71, 90),  // Muted gray
+            inactive_border: Color::Rgb(68, 71, 90), // Muted gray
 
             directory: Color::Rgb(189, 147, 249), // Soft purple (instead of light blue)
             symlink: Color::Rgb(139, 233, 253),   // Cyan
@@ -93,6 +99,8 @@ impl Theme {
     pub fn light() -> Self {
         Self {
             mode: ThemeMode::Light,
+            background: Color::Rgb(255, 255, 255), // Pure white background
+            panel_background: Color::Rgb(250, 251, 252), // Very light gray for panels
             active_border: Color::Rgb(36, 41, 47), // Dark border for active
             inactive_border: Color::Rgb(208, 215, 222), // Light gray for inactive
 
@@ -130,6 +138,8 @@ impl Theme {
     pub fn gruvbox() -> Self {
         Self {
             mode: ThemeMode::Gruvbox,
+            background: Color::Rgb(29, 32, 33), // Gruvbox dark background
+            panel_background: Color::Rgb(40, 40, 40), // Gruvbox dark gray
             active_border: Color::Rgb(251, 184, 108),
             inactive_border: Color::Rgb(124, 111, 100),
 
@@ -167,6 +177,8 @@ impl Theme {
     pub fn nord() -> Self {
         Self {
             mode: ThemeMode::Nord,
+            background: Color::Rgb(46, 52, 64), // Nord Polar Night background
+            panel_background: Color::Rgb(59, 66, 82), // Nord Polar Night lighter
             active_border: Color::Rgb(136, 192, 208),
             inactive_border: Color::Rgb(76, 86, 106),
 
@@ -204,8 +216,10 @@ impl Theme {
     pub fn modern() -> Self {
         Self {
             mode: ThemeMode::Modern,
+            background: Color::Rgb(24, 26, 33), // Modern dark blue background
+            panel_background: Color::Rgb(30, 33, 41), // Slightly lighter
             active_border: Color::Rgb(100, 255, 218), // Mint accent
-            inactive_border: Color::Rgb(61, 68, 85),  // Subtle gray
+            inactive_border: Color::Rgb(61, 68, 85), // Subtle gray
 
             directory: Color::Rgb(130, 170, 255),    // Soft blue
             symlink: Color::Rgb(100, 255, 218),      // Mint
