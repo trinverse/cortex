@@ -125,6 +125,7 @@ struct App {
     search_rx: Option<mpsc::UnboundedReceiver<cortex_core::SearchProgress>>,
     refresh_needed: bool,
     file_change_rx: Option<mpsc::UnboundedReceiver<()>>,
+    command_output_rx: Option<mpsc::Receiver<String>>,
     file_event_rx: Option<mpsc::UnboundedReceiver<cortex_core::FileMonitorEvent>>,
     notification_manager: NotificationManager,
     mouse_handler: MouseHandler,
@@ -196,6 +197,7 @@ impl App {
             search_rx: None,
             refresh_needed: false,
             file_change_rx: Some(file_change_rx),
+            command_output_rx: None,
             file_event_rx: Some(file_event_rx),
             notification_manager: NotificationManager::new(),
             mouse_handler: MouseHandler::new(),
@@ -253,6 +255,41 @@ impl App {
 
             for event in events_to_process {
                 self.handle_file_event(event);
+            }
+
+            // Check for command output
+            let mut command_outputs = Vec::new();
+            let mut channel_closed = false;
+            
+            if let Some(rx) = &mut self.command_output_rx {
+                // Try to receive all available messages
+                loop {
+                    match rx.try_recv() {
+                        Ok(output) => {
+                            command_outputs.push(output);
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                            // No more messages available right now
+                            break;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                            // Channel is closed, command has finished
+                            channel_closed = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Add all received outputs to state
+            for output in command_outputs {
+                self.state.add_command_output(output);
+            }
+            
+            // Handle channel closure
+            if channel_closed {
+                self.state.set_command_running(false);
+                self.command_output_rx = None;
             }
 
             match self.events.next().await? {
@@ -497,17 +534,8 @@ impl App {
                             ));
                         }
                     } else {
-                        // Execute external command
-                        match CommandProcessor::execute_command(&command, &self.state).await {
-                            Ok(output) => {
-                                if !output.is_empty() {
-                                    self.state.set_status_message(output);
-                                }
-                            }
-                            Err(e) => {
-                                self.state.set_status_message(format!("Error: {}", e));
-                            }
-                        }
+                        // Execute external command with streaming output
+                        self.execute_streaming_command(command.clone()).await?;
                     }
                 }
 
@@ -769,6 +797,11 @@ impl App {
             (KeyCode::Char('/'), _) if self.state.command_line.is_empty() => {
                 // Show command palette when / is typed on empty command line
                 self.dialog = Some(Dialog::CommandPalette(CommandPaletteDialog::new()));
+            }
+            (KeyCode::Char('o'), KeyModifiers::SHIFT) | (KeyCode::Char('O'), _) 
+                if self.state.command_line.is_empty() => {
+                // Toggle command output visibility with 'O' key
+                self.state.toggle_command_output();
             }
             (KeyCode::Char(c), _) => {
                 self.state.command_line.insert(self.state.command_cursor, c);
@@ -1915,6 +1948,9 @@ impl App {
             panel.selected_index = panel.entries.len() - 1;
         }
 
+        // Update git info for the current directory
+        panel.git_info = cortex_core::get_git_info(&panel.current_dir);
+
         Ok(())
     }
 
@@ -1944,6 +1980,9 @@ impl App {
         if panel.selected_index >= panel.entries.len() && !panel.entries.is_empty() {
             panel.selected_index = panel.entries.len() - 1;
         }
+
+        // Update git info for the current directory
+        panel.git_info = cortex_core::get_git_info(&panel.current_dir);
 
         Ok(())
     }
@@ -2471,6 +2510,36 @@ impl App {
         } else {
             Vec::new()
         }
+    }
+
+    async fn execute_streaming_command(&mut self, command: String) -> Result<()> {
+        use tokio::sync::mpsc;
+        
+        // Clear any previous output
+        self.state.clear_command_output();
+        self.state.set_command_running(true);
+        
+        // Create channel for command output
+        let (tx, rx) = mpsc::channel::<String>(1000);
+        self.command_output_rx = Some(rx);
+        
+        // Start the streaming command in a separate task
+        let current_dir = self.state.active_panel().current_dir.clone();
+        tokio::spawn(async move {
+            let result = CommandProcessor::execute_streaming_command_in_dir(&command, &current_dir, tx.clone()).await;
+            
+            // Send completion message
+            match result {
+                Ok(exit_code) => {
+                    let _ = tx.send(format!("\n[COMPLETED] Command finished with exit code: {}", exit_code)).await;
+                }
+                Err(e) => {
+                    let _ = tx.send(format!("\n[ERROR] Command failed: {}", e)).await;
+                }
+            }
+        });
+        
+        Ok(())
     }
 
     async fn cleanup_and_exit(&mut self) -> Result<()> {
