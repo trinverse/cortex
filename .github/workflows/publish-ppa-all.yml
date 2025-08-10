@@ -1,4 +1,4 @@
-name: Publish to PPA
+name: Publish to PPA (All Versions)
 
 on:
   workflow_dispatch:
@@ -8,22 +8,56 @@ on:
         required: true
         default: '0.1.0'
       distribution:
-        description: 'Ubuntu distribution'
+        description: 'Ubuntu distribution(s)'
         required: true
         type: choice
+        default: 'all'
         options:
-          - all       # All stable versions
-          - focal     # 20.04 LTS
-          - jammy     # 22.04 LTS
-          - noble     # 24.04 LTS
-          - oracular  # 24.10
-          - plucky    # 25.04 (development)
-          - all-including-dev  # All versions including development
+          - all              # All stable (focal, jammy, noble, oracular)
+          - all-including-dev # All including development (+ plucky)
+          - focal            # 20.04 LTS only
+          - jammy            # 22.04 LTS only
+          - noble            # 24.04 LTS only
+          - oracular         # 24.10 only
+          - plucky           # 25.04 dev only
+          - lts-only         # LTS versions only (focal, jammy, noble)
 
 jobs:
-  publish:
-    name: Publish to Ubuntu PPA
+  prepare:
+    name: Prepare Distribution List
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Set up distribution matrix
+        id: set-matrix
+        env:
+          DIST_CHOICE: ${{ github.event.inputs.distribution }}
+        run: |
+          case "$DIST_CHOICE" in
+            "all")
+              DISTS='["focal", "jammy", "noble", "oracular"]'
+              ;;
+            "all-including-dev")
+              DISTS='["focal", "jammy", "noble", "oracular", "plucky"]'
+              ;;
+            "lts-only")
+              DISTS='["focal", "jammy", "noble"]'
+              ;;
+            *)
+              DISTS='["'$DIST_CHOICE'"]'
+              ;;
+          esac
+          echo "matrix={\"dist\":$DISTS}" >> $GITHUB_OUTPUT
+          echo "Building for: $DISTS"
+
+  publish:
+    name: Publish ${{ matrix.dist }} to PPA
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      max-parallel: 2  # Limit parallel uploads to avoid conflicts
     
     steps:
       - name: Checkout
@@ -48,35 +82,23 @@ jobs:
           echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
           gpg-connect-agent reloadagent /bye
       
-      - name: Prepare build
+      - name: Prepare source package
         env:
           VERSION: ${{ github.event.inputs.version }}
-          DIST: ${{ github.event.inputs.distribution }}
+          DIST: ${{ matrix.dist }}
         run: |
-          # Determine distributions to build
-          if [ "$DIST" = "all" ]; then
-            DISTRIBUTIONS="focal jammy noble oracular"
-          elif [ "$DIST" = "all-including-dev" ]; then
-            DISTRIBUTIONS="focal jammy noble oracular plucky"
+          # Set version with distribution suffix
+          if [ "$DIST" = "focal" ]; then
+            FULL_VERSION="${VERSION}-1ubuntu1"
           else
-            DISTRIBUTIONS="$DIST"
+            FULL_VERSION="${VERSION}-1ubuntu1~${DIST}1"
           fi
-          echo "DISTRIBUTIONS=$DISTRIBUTIONS" >> $GITHUB_ENV
           
-          # For single distribution, set version
-          if [ "$DIST" != "all" ] && [ "$DIST" != "all-including-dev" ]; then
-            if [ "$DIST" = "focal" ]; then
-              FULL_VERSION="${VERSION}-1ubuntu1"
-            else
-              FULL_VERSION="${VERSION}-1ubuntu1~${DIST}1"
-            fi
-            echo "FULL_VERSION=$FULL_VERSION" >> $GITHUB_ENV
-          fi
+          echo "Building version $FULL_VERSION for $DIST"
           
           # Create build directory
           BUILD_DIR=~/ppa-build
           mkdir -p $BUILD_DIR
-          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
           
           # Prepare source
           WORK_DIR="$BUILD_DIR/cortex-${VERSION}"
@@ -92,12 +114,14 @@ jobs:
           tar czf "cortex_${VERSION}.orig.tar.gz" "cortex-${VERSION}"
           
           echo "WORK_DIR=$WORK_DIR" >> $GITHUB_ENV
+          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
+          echo "FULL_VERSION=$FULL_VERSION" >> $GITHUB_ENV
       
       - name: Create debian files
         working-directory: ${{ env.WORK_DIR }}
         env:
           VERSION: ${{ github.event.inputs.version }}
-          DIST: ${{ github.event.inputs.distribution }}
+          DIST: ${{ matrix.dist }}
           DEBEMAIL: ${{ secrets.DEBEMAIL }}
           DEBFULLNAME: ${{ secrets.DEBFULLNAME }}
         run: |
@@ -106,7 +130,7 @@ jobs:
           echo "12" > debian/compat
           
           # Create control file
-          cat > debian/control << 'END'
+          cat > debian/control << 'CONTROL_END'
           Source: cortex
           Section: utils
           Priority: optional
@@ -124,13 +148,13 @@ jobs:
           Description: Modern terminal file manager
            Cortex is a powerful terminal file manager written in Rust.
            Features dual-pane interface, vim-style navigation, and plugin support.
-          END
+          CONTROL_END
           
-          # Fix indentation in control file
+          # Fix indentation
           sed -i 's/^          //' debian/control
           
           # Create rules file
-          cat > debian/rules << 'END'
+          cat > debian/rules << 'RULES_END'
           #!/usr/bin/make -f
           
           export DH_VERBOSE = 1
@@ -146,28 +170,31 @@ jobs:
           	install -Dm755 target/release/cortex debian/cortex/usr/bin/cortex
           
           override_dh_auto_test:
-          	# Skip tests
+          	# Skip tests during PPA build
           
           override_dh_auto_clean:
           	cargo clean
           	dh_auto_clean
-          END
+          RULES_END
           
-          # Fix indentation in rules file
+          # Fix indentation and make executable
           sed -i 's/^          //' debian/rules
           chmod +x debian/rules
           
           # Create changelog
-          cat > debian/changelog << END
+          cat > debian/changelog << CHANGELOG_END
           cortex (${FULL_VERSION}) ${DIST}; urgency=medium
           
             * Release version ${VERSION} for Ubuntu ${DIST}
+            * Modern terminal file manager with dual-pane interface
+            * Plugin system with Lua support
+            * Advanced file operations and vim-style navigation
           
            -- ${DEBFULLNAME} <${DEBEMAIL}>  $(date -R)
-          END
+          CHANGELOG_END
           
           # Create copyright
-          cat > debian/copyright << 'END'
+          cat > debian/copyright << 'COPYRIGHT_END'
           Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
           Upstream-Name: cortex
           Source: https://github.com/trinverse/cortex
@@ -178,7 +205,7 @@ jobs:
            Permission is hereby granted, free of charge, to any person obtaining a
            copy of this software and associated documentation files (the "Software"),
            to deal in the Software without restriction.
-          END
+          COPYRIGHT_END
           
           # Fix indentation
           sed -i 's/^          //' debian/copyright
@@ -202,24 +229,50 @@ jobs:
           LAUNCHPAD_USERNAME: ${{ secrets.LAUNCHPAD_USERNAME }}
         run: |
           # Configure dput
-          cat > ~/.dput.cf << END
+          cat > ~/.dput.cf << DPUT_END
           [cortex-ppa]
           fqdn = ppa.launchpad.net
           method = ftp
           incoming = ~${LAUNCHPAD_USERNAME}/ubuntu/cortex
           login = anonymous
           allow_unsigned_uploads = 0
-          END
+          DPUT_END
           
-          # Upload
+          # Upload to PPA
           dput cortex-ppa *.changes
+          
+          echo "✅ Successfully uploaded ${{ matrix.dist }} to PPA"
       
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ppa-${{ matrix.dist }}-${{ github.event.inputs.version }}
+          path: ${{ env.BUILD_DIR }}/*.changes
+  
+  summary:
+    name: Deployment Summary
+    needs: publish
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
       - name: Summary
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          DIST: ${{ github.event.inputs.distribution }}
         run: |
-          echo "## ✅ PPA Upload Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 PPA Deployment Complete!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Version: ${{ github.event.inputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Distribution: ${{ github.event.inputs.distribution }}" >> $GITHUB_STEP_SUMMARY
-          echo "- PPA: ppa:${{ secrets.LAUNCHPAD_USERNAME }}/cortex" >> $GITHUB_STEP_SUMMARY
+          echo "### Configuration:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- **Distribution Choice**: $DIST" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Check build status: https://launchpad.net/~${{ secrets.LAUNCHPAD_USERNAME }}/+archive/ubuntu/cortex" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check build status: https://launchpad.net/~${{ secrets.LAUNCHPAD_USERNAME }}/+archive/ubuntu/cortex" >> $GITHUB_STEP_SUMMARY
+          echo "2. Wait 15-60 minutes for Launchpad to build packages" >> $GITHUB_STEP_SUMMARY
+          echo "3. Install with:" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "sudo add-apt-repository ppa:${{ secrets.LAUNCHPAD_USERNAME }}/cortex" >> $GITHUB_STEP_SUMMARY
+          echo "sudo apt update" >> $GITHUB_STEP_SUMMARY
+          echo "sudo apt install cortex" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
