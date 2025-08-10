@@ -93,37 +93,37 @@ impl Theme {
     pub fn light() -> Self {
         Self {
             mode: ThemeMode::Light,
-            active_border: Color::Rgb(0, 122, 204),      // Modern blue
-            inactive_border: Color::Rgb(208, 215, 222),  // Soft gray
+            active_border: Color::Rgb(36, 41, 47),       // Dark border for active
+            inactive_border: Color::Rgb(208, 215, 222),  // Light gray for inactive
 
-            directory: Color::Rgb(0, 95, 184),           // Deep blue for directories
-            symlink: Color::Rgb(0, 158, 161),            // Teal for symlinks
-            executable: Color::Rgb(34, 139, 34),         // Forest green
-            regular_file: Color::Rgb(36, 41, 47),        // Dark gray (not pure black)
-            source_code: Color::Rgb(5, 80, 174),         // Code blue
-            document: Color::Rgb(219, 109, 0),           // Document orange
-            image: Color::Rgb(149, 61, 172),             // Purple for images
-            archive: Color::Rgb(215, 58, 73),            // Modern red
-            hidden: Color::Rgb(110, 118, 129),           // Muted gray
+            directory: Color::Rgb(7, 54, 110),           // Dark blue for directories
+            symlink: Color::Rgb(0, 91, 93),              // Dark teal for symlinks
+            executable: Color::Rgb(22, 98, 22),          // Dark green
+            regular_file: Color::Rgb(36, 41, 47),        // Dark gray
+            source_code: Color::Rgb(0, 48, 110),         // Dark blue for code
+            document: Color::Rgb(133, 65, 0),            // Dark orange for documents
+            image: Color::Rgb(102, 31, 117),             // Dark purple for images
+            archive: Color::Rgb(157, 42, 53),            // Dark red for archives
+            hidden: Color::Rgb(88, 96, 105),             // Medium gray for hidden
 
-            selected_bg: Color::Rgb(225, 236, 244),      // Light blue selection
-            selected_fg: Color::Rgb(36, 41, 47),         // Dark text on selection
-            inactive_selected_bg: Color::Rgb(243, 246, 248), // Very light gray
-            marked: Color::Rgb(255, 203, 107),           // Soft amber for marked
+            selected_bg: Color::Rgb(210, 227, 252),      // Light blue background
+            selected_fg: Color::Rgb(24, 28, 33),         // Very dark text on selection
+            inactive_selected_bg: Color::Rgb(234, 238, 242), // Light gray background
+            marked: Color::Rgb(255, 235, 180),           // Light yellow background for marked
 
-            status_bar_bg: Color::Rgb(246, 248, 250),    // GitHub-style light gray
-            status_bar_fg: Color::Rgb(36, 41, 47),       // Dark gray text
-            command_line_bg: Color::Rgb(255, 255, 255),  // Pure white
-            command_line_fg: Color::Rgb(36, 41, 47),     // Dark gray text
+            status_bar_bg: Color::Rgb(246, 248, 250),    // Light gray background
+            status_bar_fg: Color::Rgb(36, 41, 47),       // Dark text
+            command_line_bg: Color::Rgb(255, 255, 255),  // White background
+            command_line_fg: Color::Rgb(24, 28, 33),     // Very dark text
 
-            error: Color::Rgb(215, 58, 73),              // Modern red
-            warning: Color::Rgb(230, 162, 60),           // Amber warning
-            success: Color::Rgb(40, 167, 69),            // Success green
-            info: Color::Rgb(0, 122, 204),               // Info blue
+            error: Color::Rgb(157, 42, 53),              // Dark red
+            warning: Color::Rgb(133, 77, 14),            // Dark amber
+            success: Color::Rgb(28, 117, 48),            // Dark green
+            info: Color::Rgb(0, 71, 122),                // Dark blue
 
-            normal_text: Color::Rgb(36, 41, 47),         // Dark gray (softer than black)
-            dim_text: Color::Rgb(110, 118, 129),         // Muted gray
-            highlight_text: Color::Rgb(0, 122, 204),     // Highlight blue
+            normal_text: Color::Rgb(24, 28, 33),         // Very dark gray (almost black)
+            dim_text: Color::Rgb(88, 96, 105),           // Medium gray
+            highlight_text: Color::Rgb(0, 48, 110),      // Dark blue for highlights
         }
     }
 
