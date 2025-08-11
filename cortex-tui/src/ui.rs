@@ -39,13 +39,13 @@ impl UI {
                 Constraint::Min(3),
                 Constraint::Length(app.command_output_height),
                 Constraint::Length(command_line_height),
-                Constraint::Length(1),
+                Constraint::Length(2), // Increased to 2 for function key bar
             ]
         } else {
             vec![
                 Constraint::Min(3),
                 Constraint::Length(command_line_height),
-                Constraint::Length(1),
+                Constraint::Length(2), // Increased to 2 for function key bar
             ]
         };
 
@@ -405,6 +405,20 @@ impl UI {
     }
 
     fn draw_status_bar(frame: &mut Frame, area: Rect, app: &AppState, theme: &cortex_core::Theme) {
+        // Split status area into two lines
+        let status_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Length(1)])
+            .split(area);
+
+        // Draw the info line (top)
+        Self::draw_info_line(frame, status_chunks[0], app, theme);
+
+        // Draw the function key bar (bottom)
+        Self::draw_function_key_bar(frame, status_chunks[1], theme);
+    }
+
+    fn draw_info_line(frame: &mut Frame, area: Rect, app: &AppState, theme: &cortex_core::Theme) {
         let active_panel = app.active_panel();
         let current_entry = active_panel.current_entry();
 
@@ -440,10 +454,7 @@ impl UI {
         };
 
         let theme_name = format!("{:?}", theme.mode);
-        let right_text = format!(
-            "{} items | {} | {} | F1 Help ",
-            file_count, total_size, theme_name
-        );
+        let right_text = format!("{} items | {} | {}", file_count, total_size, theme_name);
 
         // Calculate spacing
         let left_width = left_text.width();
@@ -496,6 +507,70 @@ impl UI {
             .style(
                 Style::default()
                     .bg(theme.status_bar_bg)
+                    .fg(theme.status_bar_fg),
+            )
+            .alignment(Alignment::Left);
+
+        frame.render_widget(paragraph, area);
+    }
+
+    fn draw_function_key_bar(frame: &mut Frame, area: Rect, theme: &cortex_core::Theme) {
+        // Define function key actions - similar to Far Manager
+        let function_keys = vec![
+            ("F1", "Help"),
+            ("F2", "Menu"),
+            ("F3", "View"),
+            ("F4", "Edit"),
+            ("F5", "Copy"),
+            ("F6", "Move"),
+            ("F7", "MkDir"),
+            ("F8", "Delete"),
+            ("F9", "Theme"),
+            ("F10", "Quit"),
+        ];
+
+        let total_width = area.width as usize;
+        let key_width = total_width / function_keys.len();
+
+        let mut spans = Vec::new();
+
+        for (i, (key, action)) in function_keys.iter().enumerate() {
+            // Create styled key number (inverted colors for emphasis)
+            let key_span = Span::styled(
+                format!("{}", key),
+                Style::default()
+                    .bg(theme.active_border)  // Use active border color for better visibility
+                    .fg(theme.background)      // Use background color for contrast
+                    .add_modifier(Modifier::BOLD),
+            );
+
+            // Create action text with a space before it
+            let action_span = Span::styled(
+                format!(" {}", action),  // Add space before action text
+                Style::default()
+                    .fg(theme.status_bar_fg)
+                    .bg(theme.panel_background), // Use panel background for subtle separation
+            );
+
+            spans.push(key_span);
+            spans.push(action_span);
+
+            // Add padding to distribute evenly
+            if i < function_keys.len() - 1 {
+                let padding_needed = key_width.saturating_sub(key.len() + action.len() + 1); // +1 for the added space
+                spans.push(Span::styled(
+                    " ".repeat(padding_needed),
+                    Style::default().bg(theme.panel_background), // Continue panel background
+                ));
+            }
+        }
+
+        let function_key_line = Line::from(spans);
+
+        let paragraph = Paragraph::new(function_key_line)
+            .style(
+                Style::default()
+                    .bg(theme.panel_background)  // Use panel background instead of status bar bg
                     .fg(theme.status_bar_fg),
             )
             .alignment(Alignment::Left);
