@@ -355,7 +355,64 @@ impl App {
     }
 
     async fn handle_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        // First check for special keys that work globally
+        // First, handle suggestions dialog navigation keys if active
+        if let Some(Dialog::Suggestions(dialog)) = &mut self.dialog {
+            match key.code {
+                KeyCode::Up => {
+                    dialog.move_up();
+                    return Ok(true);
+                }
+                KeyCode::Down => {
+                    dialog.move_down();
+                    return Ok(true);
+                }
+                KeyCode::Tab => {
+                    if let Some(suggestion) = dialog.get_selected_suggestion() {
+                        self.state.command_line = format!("cd {}", suggestion);
+                        self.state.command_cursor = self.state.command_line.len();
+                    }
+                    self.dialog = None;
+                    return Ok(true);
+                }
+                KeyCode::Enter => {
+                    if let Some(suggestion) = dialog.get_selected_suggestion() {
+                        self.state.command_line = format!("cd {}", suggestion);
+                        self.state.command_cursor = self.state.command_line.len();
+                        
+                        // Execute the cd command
+                        let path_str = suggestion.trim();
+                        if let Some(new_dir) = CommandProcessor::parse_cd_path(
+                            path_str,
+                            &self.state.active_panel().current_dir,
+                        ) {
+                            let panel = self.state.active_panel_mut();
+                            panel.current_dir = new_dir;
+                            panel.selected_index = 0;
+                            panel.view_offset = 0;
+                            Self::refresh_panel(panel)?;
+                        }
+                        
+                        // Clear command line
+                        self.state.command_line.clear();
+                        self.state.command_cursor = 0;
+                        self.state.command_history_index = None;
+                        self.state.command_suggestions.clear();
+                        self.state.selected_suggestion = None;
+                    }
+                    self.dialog = None;
+                    return Ok(true);
+                }
+                KeyCode::Esc => {
+                    self.dialog = None;
+                    return Ok(true);
+                }
+                _ => {
+                    // Let other keys fall through to normal processing
+                }
+            }
+        }
+
+        // Then check for special keys that work globally
         match (key.code, key.modifiers) {
             // Navigation keys - work on panels
             (KeyCode::Up, modifiers)
@@ -417,9 +474,9 @@ impl App {
                 }
             }
 
-            // History navigation with Up/Down when command line has text
+            // History navigation with Up/Down when command line has text (suggestions dialog handles these keys separately above)
             (KeyCode::Up, modifiers)
-                if modifiers.is_empty() && !self.state.command_line.is_empty() && !matches!(self.dialog, Some(Dialog::Suggestions(_))) =>
+                if modifiers.is_empty() && !self.state.command_line.is_empty() =>
             {
                 if !self.state.command_history.is_empty() {
                     let new_index = match self.state.command_history_index {
@@ -433,7 +490,7 @@ impl App {
                 }
             }
             (KeyCode::Down, modifiers)
-                if modifiers.is_empty() && !self.state.command_line.is_empty() && !matches!(self.dialog, Some(Dialog::Suggestions(_))) =>
+                if modifiers.is_empty() && !self.state.command_line.is_empty() =>
             {
                 if let Some(index) = self.state.command_history_index {
                     if index < self.state.command_history.len() - 1 {
@@ -449,10 +506,8 @@ impl App {
 
             // Global keys that always work
             (KeyCode::Tab, _) => {
-                // Only toggle panels if not in suggestions dialog
-                if !matches!(self.dialog, Some(Dialog::Suggestions(_))) {
-                    self.state.toggle_panel();
-                }
+                // Tab toggles panels (suggestions dialog handles Tab separately above)
+                self.state.toggle_panel();
             }
             (KeyCode::Enter, modifiers)
                 if modifiers.is_empty() && self.state.command_line.is_empty() =>
@@ -1951,24 +2006,8 @@ impl App {
                 }
                 _ => {}
             },
-            Some(Dialog::Suggestions(dialog)) => match key.code {
-                KeyCode::Up => {
-                    dialog.move_up();
-                }
-                KeyCode::Down => {
-                    dialog.move_down();
-                }
-                KeyCode::Tab | KeyCode::Enter => {
-                    if let Some(suggestion) = dialog.get_selected_suggestion() {
-                        self.state.command_line = format!("cd {}", suggestion);
-                        self.state.command_cursor = self.state.command_line.len();
-                    }
-                    self.dialog = None;
-                }
-                KeyCode::Esc => {
-                    self.dialog = None;
-                }
-                _ => {}
+            Some(Dialog::Suggestions(_)) => {
+                // Suggestions dialog is handled at the beginning of the function
             },
             None => {}
         }
