@@ -380,47 +380,20 @@ impl App {
                     self.dialog = None;
                     return Ok(true);
                 }
-                KeyCode::Enter if !self.state.command_line.is_empty() => {
-                    if let Some(Dialog::Suggestions(dialog)) = &self.dialog {
-                        if let Some(suggestion) = dialog.get_selected_suggestion() {
-                            self.state.command_line = format!("cd {}", suggestion);
-                            self.state.command_cursor = self.state.command_line.len();
-                            
-                            // Execute the cd command immediately
-                            let path_str = suggestion.trim();
-                            if let Some(new_dir) = CommandProcessor::parse_cd_path(
-                                path_str,
-                                &self.state.active_panel().current_dir,
-                            ) {
-                                let panel = self.state.active_panel_mut();
-                                panel.current_dir = new_dir;
-                                panel.selected_index = 0;
-                                panel.view_offset = 0;
-                                Self::refresh_panel(panel)?;
-                            }
-                            
-                            // Clear command line
-                            self.state.command_line.clear();
-                            self.state.command_cursor = 0;
-                            self.state.command_history_index = None;
-                            self.state.command_suggestions.clear();
-                            self.state.selected_suggestion = None;
-                        }
-                    }
+                KeyCode::Enter => {
+                    // Let Enter fall through to normal command execution handling
                     self.dialog = None;
-                    return Ok(true);
                 }
                 KeyCode::Esc => {
                     self.dialog = None;
-                    // Also clear suggestions from state
+                    // Clear suggestions completely
                     self.state.command_suggestions.clear();
                     self.state.selected_suggestion = None;
                     return Ok(true);
                 }
                 _ => {
-                    // For all other keys (typing, backspace, etc.), close suggestions dialog
-                    // and let the key be processed normally below
-                    self.dialog = None;
+                    // For all other keys, let typing continue normally
+                    // The key will be processed below and suggestions will update
                 }
             }
         }
@@ -900,8 +873,10 @@ impl App {
                                 self.state.command_suggestions.clone()
                             )
                         ));
-                    } else if let Some(cortex_tui::dialogs::Dialog::Suggestions(_)) = self.dialog {
-                        self.dialog = None;
+                    } else {
+                        if matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
+                            self.dialog = None;
+                        }
                     }
                 }
             }
@@ -917,8 +892,10 @@ impl App {
                                 self.state.command_suggestions.clone()
                             )
                         ));
-                    } else if let Some(cortex_tui::dialogs::Dialog::Suggestions(_)) = self.dialog {
-                        self.dialog = None;
+                    } else {
+                        if matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
+                            self.dialog = None;
+                        }
                     }
                 }
             }
@@ -948,16 +925,18 @@ impl App {
                 self.state.command_cursor += 1;
                 self.state.update_command_suggestions();
                 
-                // Show suggestions dialog if we have suggestions
+                // Update or show suggestions dialog if we have suggestions
                 if !self.state.command_suggestions.is_empty() {
                     self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
                         cortex_tui::dialogs::SuggestionsDialog::new(
                             self.state.command_suggestions.clone()
                         )
                     ));
-                } else if let Some(cortex_tui::dialogs::Dialog::Suggestions(_)) = self.dialog {
+                } else {
                     // Close suggestions dialog if no more suggestions
-                    self.dialog = None;
+                    if matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
+                        self.dialog = None;
+                    }
                 }
             }
 
