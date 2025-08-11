@@ -362,14 +362,19 @@ impl AppState {
         self.command_suggestions.clear();
         self.selected_suggestion = None;
         
-        let cmd_line = self.command_line.trim();
+        // Don't trim - we want to detect "cd " with trailing space
+        let cmd_line = &self.command_line;
         
-        // Check if it's a cd command
+        // Debug logging
+        eprintln!("DEBUG: update_command_suggestions called with: '{}'", cmd_line);
+        
+        // Check if it's a cd command (with or without space)
         if cmd_line.starts_with("cd ") || cmd_line == "cd" {
-            let path_part = if cmd_line == "cd" {
+            eprintln!("DEBUG: Detected cd command");
+            let path_part = if cmd_line == "cd" || cmd_line == "cd " {
                 ""
             } else {
-                &cmd_line[3..]
+                cmd_line[3..].trim()
             };
             
             // Get the current directory
@@ -392,30 +397,45 @@ impl AppState {
             };
             
             // Read directory and get suggestions
+            eprintln!("DEBUG: Reading directory: {:?}, prefix: '{}'", base_path, prefix);
             if let Ok(entries) = std::fs::read_dir(&base_path) {
+                let mut suggestions = Vec::new();
                 for entry in entries.flatten() {
                     if let Ok(metadata) = entry.metadata() {
                         if metadata.is_dir() {
                             if let Some(name) = entry.file_name().to_str() {
-                                if prefix.is_empty() || name.starts_with(&prefix) {
-                                    self.command_suggestions.push(format!("cd {}{}", 
-                                        if path_part.contains('/') { 
-                                            &path_part[..path_part.rfind('/').unwrap() + 1] 
-                                        } else { 
-                                            "" 
-                                        },
-                                        name
-                                    ));
-                                    
-                                    // Limit suggestions to 10
-                                    if self.command_suggestions.len() >= 10 {
-                                        break;
+                                // Skip hidden directories unless prefix starts with .
+                                if !name.starts_with('.') || prefix.starts_with('.') {
+                                    if prefix.is_empty() || name.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                                        let suggestion = if path_part.is_empty() {
+                                            format!("cd {}", name)
+                                        } else if path_part.contains('/') {
+                                            format!("cd {}{}", 
+                                                &path_part[..path_part.rfind('/').unwrap() + 1],
+                                                name
+                                            )
+                                        } else {
+                                            format!("cd {}", name)
+                                        };
+                                        suggestions.push((name.to_string(), suggestion));
                                     }
                                 }
                             }
                         }
                     }
                 }
+                
+                // Sort suggestions alphabetically
+                suggestions.sort_by(|a, b| a.0.cmp(&b.0));
+                
+                // Add to command_suggestions
+                eprintln!("DEBUG: Found {} suggestions", suggestions.len());
+                for (_, suggestion) in suggestions.into_iter().take(10) {
+                    eprintln!("DEBUG: Adding suggestion: {}", suggestion);
+                    self.command_suggestions.push(suggestion);
+                }
+            } else {
+                eprintln!("DEBUG: Failed to read directory: {:?}", base_path);
             }
         }
         // Add more command types here (ls, cp, mv, etc.)

@@ -588,6 +588,8 @@ impl App {
                 self.state.command_line.clear();
                 self.state.command_cursor = 0;
                 self.state.command_history_index = None;
+                self.state.command_suggestions.clear();
+                self.state.selected_suggestion = None;
             }
 
             // Function keys
@@ -836,10 +838,14 @@ impl App {
                 }
             }
             (KeyCode::Esc, _) => {
-                // Clear command line
+                // Clear command line and suggestions
                 self.state.command_line.clear();
                 self.state.command_cursor = 0;
                 self.state.command_history_index = None;
+                self.state.command_suggestions.clear();
+                self.state.selected_suggestion = None;
+                self.state.command_suggestions.clear();
+                self.state.selected_suggestion = None;
             }
             (KeyCode::Backspace, _) => {
                 if self.state.command_cursor > 0 {
