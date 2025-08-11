@@ -781,7 +781,7 @@ fn draw_suggestions_dialog(frame: &mut Frame, dialog: &SuggestionsDialog, theme:
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(" Directories (Tab=accept, ↑↓=navigate) ")
+        .title(" Directories (Enter=accept, ↑↓=navigate, Esc=close) ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.active_border));
 

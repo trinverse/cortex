@@ -136,6 +136,7 @@ struct App {
     mouse_handler: MouseHandler,
     context_menu: Option<ContextMenu>,
     _mouse_regions: MouseRegionManager,
+    suggestions_dismissed: bool,  // Track if user dismissed suggestions with Esc
 }
 
 impl App {
@@ -214,6 +215,7 @@ impl App {
             mouse_handler: MouseHandler::new(),
             context_menu: None,
             _mouse_regions: MouseRegionManager::new(),
+            suggestions_dismissed: false,
         })
     }
 
@@ -308,7 +310,14 @@ impl App {
                 Event::Key(key_event) => {
                     if self.context_menu.is_some() {
                         self.handle_context_menu_input(key_event).await?;
+                    } else if matches!(self.dialog, Some(Dialog::Suggestions(_))) {
+                        // Suggestions dialog is special - it doesn't block normal input
+                        // Let handle_input process everything
+                        if !self.handle_input(key_event).await? {
+                            break;
+                        }
                     } else if self.dialog.is_some() {
+                        // Other dialogs block input
                         if !self.handle_dialog_input(key_event).await? {
                             break;
                         }
@@ -355,45 +364,46 @@ impl App {
     }
 
     async fn handle_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        // Handle suggestions dialog special navigation keys ONLY if suggestions dialog is active
+        // Special handling for suggestions dialog
         if matches!(self.dialog, Some(Dialog::Suggestions(_))) {
             match key.code {
+                // Only intercept Up/Down for navigation within suggestions
                 KeyCode::Up => {
                     if let Some(Dialog::Suggestions(dialog)) = &mut self.dialog {
                         dialog.move_up();
                     }
-                    return Ok(true);
+                    return Ok(true); // Consume this key
                 }
                 KeyCode::Down => {
                     if let Some(Dialog::Suggestions(dialog)) = &mut self.dialog {
                         dialog.move_down();
                     }
-                    return Ok(true);
+                    return Ok(true); // Consume this key
                 }
-                KeyCode::Tab => {
+                // Enter accepts the selected suggestion
+                KeyCode::Enter => {
                     if let Some(Dialog::Suggestions(dialog)) = &self.dialog {
                         if let Some(suggestion) = dialog.get_selected_suggestion() {
+                            // Replace command line with full cd command
                             self.state.command_line = format!("cd {}", suggestion);
                             self.state.command_cursor = self.state.command_line.len();
                         }
                     }
+                    // Close dialog and let Enter be processed normally to execute command
                     self.dialog = None;
-                    return Ok(true);
+                    // Don't return - let it fall through to normal Enter handling
                 }
-                KeyCode::Enter => {
-                    // Let Enter fall through to normal command execution handling
-                    self.dialog = None;
-                }
+                // Esc closes suggestions without clearing command line
                 KeyCode::Esc => {
                     self.dialog = None;
-                    // Clear suggestions completely
-                    self.state.command_suggestions.clear();
-                    self.state.selected_suggestion = None;
-                    return Ok(true);
+                    self.suggestions_dismissed = true;  // Mark that user dismissed suggestions
+                    // Don't clear suggestions - just close the dialog
+                    // This prevents the dialog from immediately reopening
+                    return Ok(true); // Consume this key - don't process further
                 }
+                // All other keys (including Tab) fall through to normal processing
                 _ => {
-                    // For all other keys, let typing continue normally
-                    // The key will be processed below and suggestions will update
+                    // Don't close dialog - let typing continue with suggestions updating
                 }
             }
         }
@@ -555,6 +565,7 @@ impl App {
             (KeyCode::Enter, _) if !self.state.command_line.is_empty() => {
                 // Execute command
                 let command = self.state.command_line.clone();
+                self.suggestions_dismissed = false;  // Reset flag when executing command
 
                 // Check for special / commands
                 if let Some(cmd) = command.strip_prefix("/") {
@@ -857,22 +868,36 @@ impl App {
                 self.state.command_history_index = None;
                 self.state.command_suggestions.clear();
                 self.state.selected_suggestion = None;
-                self.state.command_suggestions.clear();
-                self.state.selected_suggestion = None;
+                self.suggestions_dismissed = false;  // Reset the flag when clearing command line
             }
             (KeyCode::Backspace, _) => {
                 if self.state.command_cursor > 0 {
                     self.state.command_cursor -= 1;
                     self.state.command_line.remove(self.state.command_cursor);
+                    
+                    // Reset dismissed flag when user modifies the command
+                    if self.suggestions_dismissed {
+                        self.suggestions_dismissed = false;
+                    }
+                    
                     self.state.update_command_suggestions();
                     
-                    // Update suggestions dialog
-                    if !self.state.command_suggestions.is_empty() {
-                        self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
-                            cortex_tui::dialogs::SuggestionsDialog::new(
-                                self.state.command_suggestions.clone()
-                            )
-                        ));
+                    // Update suggestions dialog only if not dismissed
+                    if !self.state.command_suggestions.is_empty() && !self.suggestions_dismissed {
+                        // Only create dialog if it doesn't exist
+                        if !matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
+                            self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
+                                cortex_tui::dialogs::SuggestionsDialog::new(
+                                    self.state.command_suggestions.clone()
+                                )
+                            ));
+                        } else if let Some(cortex_tui::dialogs::Dialog::Suggestions(dialog)) = &mut self.dialog {
+                            // Update existing dialog
+                            dialog.suggestions = self.state.command_suggestions.clone();
+                            if dialog.selected_index >= dialog.suggestions.len() && !dialog.suggestions.is_empty() {
+                                dialog.selected_index = dialog.suggestions.len() - 1;
+                            }
+                        }
                     } else {
                         if matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
                             self.dialog = None;
@@ -883,15 +908,30 @@ impl App {
             (KeyCode::Delete, _) => {
                 if self.state.command_cursor < self.state.command_line.len() {
                     self.state.command_line.remove(self.state.command_cursor);
+                    
+                    // Reset dismissed flag when user modifies the command
+                    if self.suggestions_dismissed {
+                        self.suggestions_dismissed = false;
+                    }
+                    
                     self.state.update_command_suggestions();
                     
-                    // Update suggestions dialog
-                    if !self.state.command_suggestions.is_empty() {
-                        self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
-                            cortex_tui::dialogs::SuggestionsDialog::new(
-                                self.state.command_suggestions.clone()
-                            )
-                        ));
+                    // Update suggestions dialog only if not dismissed
+                    if !self.state.command_suggestions.is_empty() && !self.suggestions_dismissed {
+                        // Only create dialog if it doesn't exist
+                        if !matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
+                            self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
+                                cortex_tui::dialogs::SuggestionsDialog::new(
+                                    self.state.command_suggestions.clone()
+                                )
+                            ));
+                        } else if let Some(cortex_tui::dialogs::Dialog::Suggestions(dialog)) = &mut self.dialog {
+                            // Update existing dialog
+                            dialog.suggestions = self.state.command_suggestions.clone();
+                            if dialog.selected_index >= dialog.suggestions.len() && !dialog.suggestions.is_empty() {
+                                dialog.selected_index = dialog.suggestions.len() - 1;
+                            }
+                        }
                     } else {
                         if matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
                             self.dialog = None;
@@ -923,17 +963,35 @@ impl App {
             (KeyCode::Char(c), _) => {
                 self.state.command_line.insert(self.state.command_cursor, c);
                 self.state.command_cursor += 1;
+                
+                // Reset dismissed flag when user modifies the command
+                if self.suggestions_dismissed {
+                    self.suggestions_dismissed = false;
+                }
+                
                 self.state.update_command_suggestions();
                 
-                // Update or show suggestions dialog if we have suggestions
-                if !self.state.command_suggestions.is_empty() {
-                    self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
-                        cortex_tui::dialogs::SuggestionsDialog::new(
-                            self.state.command_suggestions.clone()
-                        )
-                    ));
+                // Only show suggestions dialog if:
+                // 1. We have suggestions
+                // 2. User hasn't dismissed them with Esc
+                // 3. Dialog is not already showing (or is not a suggestions dialog)
+                if !self.state.command_suggestions.is_empty() && !self.suggestions_dismissed {
+                    // Only create dialog if it doesn't exist or isn't a suggestions dialog
+                    if !matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
+                        self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
+                            cortex_tui::dialogs::SuggestionsDialog::new(
+                                self.state.command_suggestions.clone()
+                            )
+                        ));
+                    } else if let Some(cortex_tui::dialogs::Dialog::Suggestions(dialog)) = &mut self.dialog {
+                        // Update existing dialog with new suggestions
+                        dialog.suggestions = self.state.command_suggestions.clone();
+                        if dialog.selected_index >= dialog.suggestions.len() && !dialog.suggestions.is_empty() {
+                            dialog.selected_index = dialog.suggestions.len() - 1;
+                        }
+                    }
                 } else {
-                    // Close suggestions dialog if no more suggestions
+                    // Close suggestions dialog if no more suggestions or dismissed
                     if matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
                         self.dialog = None;
                     }
