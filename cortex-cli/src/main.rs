@@ -355,59 +355,72 @@ impl App {
     }
 
     async fn handle_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        // First, handle suggestions dialog navigation keys if active
-        if let Some(Dialog::Suggestions(dialog)) = &mut self.dialog {
+        // Handle suggestions dialog special navigation keys ONLY if suggestions dialog is active
+        if matches!(self.dialog, Some(Dialog::Suggestions(_))) {
             match key.code {
                 KeyCode::Up => {
-                    dialog.move_up();
+                    if let Some(Dialog::Suggestions(dialog)) = &mut self.dialog {
+                        dialog.move_up();
+                    }
                     return Ok(true);
                 }
                 KeyCode::Down => {
-                    dialog.move_down();
+                    if let Some(Dialog::Suggestions(dialog)) = &mut self.dialog {
+                        dialog.move_down();
+                    }
                     return Ok(true);
                 }
                 KeyCode::Tab => {
-                    if let Some(suggestion) = dialog.get_selected_suggestion() {
-                        self.state.command_line = format!("cd {}", suggestion);
-                        self.state.command_cursor = self.state.command_line.len();
+                    if let Some(Dialog::Suggestions(dialog)) = &self.dialog {
+                        if let Some(suggestion) = dialog.get_selected_suggestion() {
+                            self.state.command_line = format!("cd {}", suggestion);
+                            self.state.command_cursor = self.state.command_line.len();
+                        }
                     }
                     self.dialog = None;
                     return Ok(true);
                 }
-                KeyCode::Enter => {
-                    if let Some(suggestion) = dialog.get_selected_suggestion() {
-                        self.state.command_line = format!("cd {}", suggestion);
-                        self.state.command_cursor = self.state.command_line.len();
-                        
-                        // Execute the cd command
-                        let path_str = suggestion.trim();
-                        if let Some(new_dir) = CommandProcessor::parse_cd_path(
-                            path_str,
-                            &self.state.active_panel().current_dir,
-                        ) {
-                            let panel = self.state.active_panel_mut();
-                            panel.current_dir = new_dir;
-                            panel.selected_index = 0;
-                            panel.view_offset = 0;
-                            Self::refresh_panel(panel)?;
+                KeyCode::Enter if !self.state.command_line.is_empty() => {
+                    if let Some(Dialog::Suggestions(dialog)) = &self.dialog {
+                        if let Some(suggestion) = dialog.get_selected_suggestion() {
+                            self.state.command_line = format!("cd {}", suggestion);
+                            self.state.command_cursor = self.state.command_line.len();
+                            
+                            // Execute the cd command immediately
+                            let path_str = suggestion.trim();
+                            if let Some(new_dir) = CommandProcessor::parse_cd_path(
+                                path_str,
+                                &self.state.active_panel().current_dir,
+                            ) {
+                                let panel = self.state.active_panel_mut();
+                                panel.current_dir = new_dir;
+                                panel.selected_index = 0;
+                                panel.view_offset = 0;
+                                Self::refresh_panel(panel)?;
+                            }
+                            
+                            // Clear command line
+                            self.state.command_line.clear();
+                            self.state.command_cursor = 0;
+                            self.state.command_history_index = None;
+                            self.state.command_suggestions.clear();
+                            self.state.selected_suggestion = None;
                         }
-                        
-                        // Clear command line
-                        self.state.command_line.clear();
-                        self.state.command_cursor = 0;
-                        self.state.command_history_index = None;
-                        self.state.command_suggestions.clear();
-                        self.state.selected_suggestion = None;
                     }
                     self.dialog = None;
                     return Ok(true);
                 }
                 KeyCode::Esc => {
                     self.dialog = None;
+                    // Also clear suggestions from state
+                    self.state.command_suggestions.clear();
+                    self.state.selected_suggestion = None;
                     return Ok(true);
                 }
                 _ => {
-                    // Let other keys fall through to normal processing
+                    // For all other keys (typing, backspace, etc.), close suggestions dialog
+                    // and let the key be processed normally below
+                    self.dialog = None;
                 }
             }
         }
