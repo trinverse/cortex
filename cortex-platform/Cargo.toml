@@ -20,7 +20,7 @@ chrono = "0.4"
 winapi = { version = "0.3", features = ["shellapi", "winuser", "shlobj", "objbase", "winnls"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.25"
+cocoa = "0.26"
 objc = "0.2"
 objc-foundation = "0.1"
 
