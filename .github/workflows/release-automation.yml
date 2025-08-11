@@ -232,7 +232,7 @@ jobs:
           echo "Changelog generated"
       
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           name: Cortex v${{ needs.prepare-release.outputs.version }}
           tag_name: v${{ needs.prepare-release.outputs.version }}
