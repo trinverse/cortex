@@ -23,7 +23,7 @@ log = "0.4"
 futures-util = "0.3"
 
 [target.'cfg(windows)'.dependencies]
-zip = "0.6"
+zip = "4.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
