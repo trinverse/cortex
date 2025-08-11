@@ -297,6 +297,8 @@ pub struct AppState {
     pub command_cursor: usize,
     pub command_history: Vec<String>,
     pub command_history_index: Option<usize>,
+    pub command_suggestions: Vec<(String, String)>, // (display_name, full_path)
+    pub selected_suggestion: Option<usize>,
     pub status_message: Option<String>,
     pub show_help: bool,
     pub pending_operation: Option<FileOperation>,
@@ -356,6 +358,107 @@ pub enum ActivePanel {
 }
 
 impl AppState {
+    pub fn update_command_suggestions(&mut self) {
+        self.command_suggestions.clear();
+        self.selected_suggestion = None;
+        
+        // Don't trim - we want to detect "cd " with trailing space
+        let cmd_line = &self.command_line;
+        
+        // Check if it's a cd command (with or without space)
+        if cmd_line.starts_with("cd ") || cmd_line == "cd" {
+            let path_part = if cmd_line == "cd" || cmd_line == "cd " {
+                ""
+            } else {
+                cmd_line[3..].trim()
+            };
+            
+            // Get the current directory
+            let current_dir = &self.active_panel().current_dir;
+            
+            // Parse the path to determine base directory and prefix
+            let (base_path, prefix) = if path_part.is_empty() {
+                (current_dir.clone(), String::new())
+            } else if path_part.starts_with('/') {
+                // Absolute path
+                if let Some(slash_pos) = path_part.rfind('/') {
+                    let dir_part = &path_part[..=slash_pos];
+                    let prefix = &path_part[slash_pos + 1..];
+                    (std::path::PathBuf::from(dir_part), prefix.to_string())
+                } else {
+                    // This shouldn't happen for paths starting with /
+                    (std::path::PathBuf::from("/"), path_part[1..].to_string())
+                }
+            } else if let Some(slash_pos) = path_part.rfind('/') {
+                // Relative path with subdirectories
+                let dir_part = &path_part[..=slash_pos];
+                let prefix = &path_part[slash_pos + 1..];
+                (current_dir.join(dir_part), prefix.to_string())
+            } else {
+                // Simple relative path
+                (current_dir.clone(), path_part.to_string())
+            };
+            
+            // Read directory and get suggestions
+            if let Ok(entries) = std::fs::read_dir(&base_path) {
+                let mut suggestions = Vec::new();
+                for entry in entries.flatten() {
+                    if let Ok(metadata) = entry.metadata() {
+                        if metadata.is_dir() {
+                            if let Some(name) = entry.file_name().to_str() {
+                                // Skip hidden directories unless prefix starts with .
+                                if !name.starts_with('.') || prefix.starts_with('.') {
+                                    if prefix.is_empty() || name.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                                        // Store just the directory name for display
+                                        // But compute the full path for completion
+                                        let full_completion = if path_part.is_empty() {
+                                            name.to_string()
+                                        } else if path_part.starts_with('/') {
+                                            // Absolute path
+                                            if path_part == "/" {
+                                                format!("/{}", name)
+                                            } else {
+                                                format!("{}{}", 
+                                                    &path_part[..path_part.rfind('/').unwrap() + 1],
+                                                    name
+                                                )
+                                            }
+                                        } else if path_part.contains('/') {
+                                            // Relative path with subdirectories
+                                            format!("{}{}", 
+                                                &path_part[..path_part.rfind('/').unwrap() + 1],
+                                                name
+                                            )
+                                        } else {
+                                            name.to_string()
+                                        };
+                                        
+                                        // Store: (name_for_display, full_completion_path)
+                                        suggestions.push((name.to_string(), full_completion));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Sort suggestions alphabetically by display name
+                suggestions.sort_by(|a, b| a.0.cmp(&b.0));
+                
+                // Add to command_suggestions
+                for suggestion in suggestions.into_iter().take(10) {
+                    self.command_suggestions.push(suggestion);
+                }
+            }
+        }
+        // Add more command types here (ls, cp, mv, etc.)
+        
+        // Select first suggestion if any
+        if !self.command_suggestions.is_empty() {
+            self.selected_suggestion = Some(0);
+        }
+    }
+    
     pub fn new() -> Result<Self> {
         let current_dir = std::env::current_dir()?;
         let config_manager = ConfigManager::new()?;
@@ -379,6 +482,8 @@ impl AppState {
             command_cursor: 0,
             command_history: Vec::new(),
             command_history_index: None,
+            command_suggestions: Vec::new(),
+            selected_suggestion: None,
             status_message: None,
             show_help: false,
             pending_operation: None,
