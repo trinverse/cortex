@@ -18,7 +18,15 @@ impl LinuxTrash {
 
         Self { trash_dir }
     }
+}
 
+impl Default for LinuxTrash {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LinuxTrash {
     fn get_trash_directory() -> PathBuf {
         // Follow XDG trash specification
         if let Ok(xdg_data_home) = env::var("XDG_DATA_HOME") {
