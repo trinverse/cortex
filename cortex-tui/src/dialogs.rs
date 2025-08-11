@@ -729,12 +729,12 @@ fn render_theme_selection_dialog(frame: &mut Frame, area: Rect, dialog: &ThemeSe
 
 #[derive(Debug, Clone)]
 pub struct SuggestionsDialog {
-    pub suggestions: Vec<String>,
+    pub suggestions: Vec<(String, String)>, // (display_name, full_path)
     pub selected_index: usize,
 }
 
 impl SuggestionsDialog {
-    pub fn new(suggestions: Vec<String>) -> Self {
+    pub fn new(suggestions: Vec<(String, String)>) -> Self {
         Self {
             suggestions,
             selected_index: 0,
@@ -758,37 +758,42 @@ impl SuggestionsDialog {
     }
     
     pub fn get_selected_suggestion(&self) -> Option<&String> {
-        self.suggestions.get(self.selected_index)
+        self.suggestions.get(self.selected_index).map(|(_, path)| path)
+    }
+    
+    pub fn get_selected_display_name(&self) -> Option<&String> {
+        self.suggestions.get(self.selected_index).map(|(name, _)| name)
     }
 }
 
 fn draw_suggestions_dialog(frame: &mut Frame, dialog: &SuggestionsDialog, theme: &cortex_core::Theme) {
-    // Position the dialog near the command line (bottom of screen)
+    // Position the dialog as a small overlay near the command line
     let area = frame.area();
+    let suggestion_count = dialog.suggestions.len().min(5);
     let popup_area = Rect {
-        x: area.x + 5,
-        y: area.height.saturating_sub(8), // Position near bottom
-        width: area.width.saturating_sub(10).min(60), // Max width of 60
-        height: (dialog.suggestions.len() as u16).min(5) + 2, // Max 5 suggestions + borders
+        x: area.x + 2,
+        y: area.height.saturating_sub((suggestion_count as u16) + 6), // Just above command line
+        width: area.width.saturating_sub(4).min(50), // Narrower width
+        height: (suggestion_count as u16) + 2, // Exact height needed + borders
     };
 
     // Clear the area
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(" Command Suggestions (Tab to accept, ↑↓ to navigate, Esc to close) ")
+        .title(" Directories (Tab=accept, ↑↓=navigate) ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.active_border));
 
     let inner_area = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
-    // Create list items from suggestions
+    // Create list items from suggestions - show just the directory names
     let items: Vec<ListItem> = dialog.suggestions
         .iter()
         .take(5) // Show max 5 suggestions
         .enumerate()
-        .map(|(idx, suggestion)| {
+        .map(|(idx, (display_name, _))| {
             let is_selected = idx == dialog.selected_index;
             let style = if is_selected {
                 Style::default()
@@ -799,7 +804,7 @@ fn draw_suggestions_dialog(frame: &mut Frame, dialog: &SuggestionsDialog, theme:
                 Style::default().fg(theme.command_line_fg)
             };
             ListItem::new(Line::from(vec![
-                Span::styled(format!(" {}", suggestion), style)
+                Span::styled(format!(" {}/", display_name), style) // Add trailing slash to indicate directory
             ]))
         })
         .collect();

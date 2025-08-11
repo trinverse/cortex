@@ -1960,7 +1960,7 @@ impl App {
                 }
                 KeyCode::Tab | KeyCode::Enter => {
                     if let Some(suggestion) = dialog.get_selected_suggestion() {
-                        self.state.command_line = suggestion.clone();
+                        self.state.command_line = format!("cd {}", suggestion);
                         self.state.command_cursor = self.state.command_line.len();
                     }
                     self.dialog = None;

@@ -297,7 +297,7 @@ pub struct AppState {
     pub command_cursor: usize,
     pub command_history: Vec<String>,
     pub command_history_index: Option<usize>,
-    pub command_suggestions: Vec<String>,
+    pub command_suggestions: Vec<(String, String)>, // (display_name, full_path)
     pub selected_suggestion: Option<usize>,
     pub status_message: Option<String>,
     pub show_help: bool,
@@ -409,17 +409,32 @@ impl AppState {
                                 // Skip hidden directories unless prefix starts with .
                                 if !name.starts_with('.') || prefix.starts_with('.') {
                                     if prefix.is_empty() || name.to_lowercase().starts_with(&prefix.to_lowercase()) {
-                                        let suggestion = if path_part.is_empty() {
-                                            format!("cd {}", name)
+                                        // Store just the directory name for display
+                                        // But compute the full path for completion
+                                        let full_completion = if path_part.is_empty() {
+                                            name.to_string()
+                                        } else if path_part.starts_with('/') {
+                                            // Absolute path
+                                            if path_part == "/" {
+                                                format!("/{}", name)
+                                            } else {
+                                                format!("{}{}", 
+                                                    &path_part[..path_part.rfind('/').unwrap() + 1],
+                                                    name
+                                                )
+                                            }
                                         } else if path_part.contains('/') {
-                                            format!("cd {}{}", 
+                                            // Relative path with subdirectories
+                                            format!("{}{}", 
                                                 &path_part[..path_part.rfind('/').unwrap() + 1],
                                                 name
                                             )
                                         } else {
-                                            format!("cd {}", name)
+                                            name.to_string()
                                         };
-                                        suggestions.push((name.to_string(), suggestion));
+                                        
+                                        // Store: (name_for_display, full_completion_path)
+                                        suggestions.push((name.to_string(), full_completion));
                                     }
                                 }
                             }
@@ -427,11 +442,11 @@ impl AppState {
                     }
                 }
                 
-                // Sort suggestions alphabetically
+                // Sort suggestions alphabetically by display name
                 suggestions.sort_by(|a, b| a.0.cmp(&b.0));
                 
                 // Add to command_suggestions
-                for (_, suggestion) in suggestions.into_iter().take(10) {
+                for suggestion in suggestions.into_iter().take(10) {
                     self.command_suggestions.push(suggestion);
                 }
             }
