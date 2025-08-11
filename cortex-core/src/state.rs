@@ -365,12 +365,8 @@ impl AppState {
         // Don't trim - we want to detect "cd " with trailing space
         let cmd_line = &self.command_line;
         
-        // Debug logging
-        eprintln!("DEBUG: update_command_suggestions called with: '{}'", cmd_line);
-        
         // Check if it's a cd command (with or without space)
         if cmd_line.starts_with("cd ") || cmd_line == "cd" {
-            eprintln!("DEBUG: Detected cd command");
             let path_part = if cmd_line == "cd" || cmd_line == "cd " {
                 ""
             } else {
@@ -397,7 +393,6 @@ impl AppState {
             };
             
             // Read directory and get suggestions
-            eprintln!("DEBUG: Reading directory: {:?}, prefix: '{}'", base_path, prefix);
             if let Ok(entries) = std::fs::read_dir(&base_path) {
                 let mut suggestions = Vec::new();
                 for entry in entries.flatten() {
@@ -429,13 +424,9 @@ impl AppState {
                 suggestions.sort_by(|a, b| a.0.cmp(&b.0));
                 
                 // Add to command_suggestions
-                eprintln!("DEBUG: Found {} suggestions", suggestions.len());
                 for (_, suggestion) in suggestions.into_iter().take(10) {
-                    eprintln!("DEBUG: Adding suggestion: {}", suggestion);
                     self.command_suggestions.push(suggestion);
                 }
-            } else {
-                eprintln!("DEBUG: Failed to read directory: {:?}", base_path);
             }
         }
         // Add more command types here (ls, cp, mv, etc.)
