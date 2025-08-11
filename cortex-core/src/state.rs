@@ -376,19 +376,26 @@ impl AppState {
             // Get the current directory
             let current_dir = &self.active_panel().current_dir;
             
-            // If path_part is empty or ends with '/', suggest directories in current location
+            // Parse the path to determine base directory and prefix
             let (base_path, prefix) = if path_part.is_empty() {
                 (current_dir.clone(), String::new())
+            } else if path_part.starts_with('/') {
+                // Absolute path
+                if let Some(slash_pos) = path_part.rfind('/') {
+                    let dir_part = &path_part[..=slash_pos];
+                    let prefix = &path_part[slash_pos + 1..];
+                    (std::path::PathBuf::from(dir_part), prefix.to_string())
+                } else {
+                    // This shouldn't happen for paths starting with /
+                    (std::path::PathBuf::from("/"), path_part[1..].to_string())
+                }
             } else if let Some(slash_pos) = path_part.rfind('/') {
+                // Relative path with subdirectories
                 let dir_part = &path_part[..=slash_pos];
                 let prefix = &path_part[slash_pos + 1..];
-                let full_path = if dir_part.starts_with('/') {
-                    std::path::PathBuf::from(dir_part)
-                } else {
-                    current_dir.join(dir_part)
-                };
-                (full_path, prefix.to_string())
+                (current_dir.join(dir_part), prefix.to_string())
             } else {
+                // Simple relative path
                 (current_dir.clone(), path_part.to_string())
             };
             

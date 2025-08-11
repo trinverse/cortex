@@ -31,6 +31,7 @@ pub enum Dialog {
     Config(ConfigDialog),
     SaveConfirm(SaveConfirmDialog),
     ThemeSelection(ThemeSelectionDialog),
+    Suggestions(SuggestionsDialog),
 }
 
 #[derive(Debug, Clone)]
@@ -325,7 +326,7 @@ impl HelpDialog {
     }
 }
 
-pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog) {
+pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog, theme: &cortex_core::Theme) {
     match dialog {
         Dialog::Confirm(d) => {
             let area = centered_rect(60, 20, frame.area());
@@ -359,6 +360,9 @@ pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog) {
         Dialog::ThemeSelection(d) => {
             let area = centered_rect(50, 30, frame.area());
             render_theme_selection_dialog(frame, area, d)
+        }
+        Dialog::Suggestions(d) => {
+            draw_suggestions_dialog(frame, d, theme)
         }
     }
 }
@@ -721,6 +725,87 @@ fn render_theme_selection_dialog(frame: &mut Frame, area: Rect, dialog: &ThemeSe
         .style(Style::default().fg(Color::Yellow))
         .alignment(Alignment::Center);
     frame.render_widget(status, chunks[2]);
+}
+
+#[derive(Debug, Clone)]
+pub struct SuggestionsDialog {
+    pub suggestions: Vec<String>,
+    pub selected_index: usize,
+}
+
+impl SuggestionsDialog {
+    pub fn new(suggestions: Vec<String>) -> Self {
+        Self {
+            suggestions,
+            selected_index: 0,
+        }
+    }
+    
+    pub fn move_up(&mut self) {
+        if self.selected_index > 0 {
+            self.selected_index -= 1;
+        } else if !self.suggestions.is_empty() {
+            self.selected_index = self.suggestions.len() - 1;
+        }
+    }
+    
+    pub fn move_down(&mut self) {
+        if self.selected_index < self.suggestions.len().saturating_sub(1) {
+            self.selected_index += 1;
+        } else {
+            self.selected_index = 0;
+        }
+    }
+    
+    pub fn get_selected_suggestion(&self) -> Option<&String> {
+        self.suggestions.get(self.selected_index)
+    }
+}
+
+fn draw_suggestions_dialog(frame: &mut Frame, dialog: &SuggestionsDialog, theme: &cortex_core::Theme) {
+    // Position the dialog near the command line (bottom of screen)
+    let area = frame.area();
+    let popup_area = Rect {
+        x: area.x + 5,
+        y: area.height.saturating_sub(8), // Position near bottom
+        width: area.width.saturating_sub(10).min(60), // Max width of 60
+        height: (dialog.suggestions.len() as u16).min(5) + 2, // Max 5 suggestions + borders
+    };
+
+    // Clear the area
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .title(" Command Suggestions (Tab to accept, ↑↓ to navigate, Esc to close) ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.active_border));
+
+    let inner_area = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    // Create list items from suggestions
+    let items: Vec<ListItem> = dialog.suggestions
+        .iter()
+        .take(5) // Show max 5 suggestions
+        .enumerate()
+        .map(|(idx, suggestion)| {
+            let is_selected = idx == dialog.selected_index;
+            let style = if is_selected {
+                Style::default()
+                    .fg(theme.selected_fg)
+                    .bg(theme.selected_bg)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.command_line_fg)
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(format!(" {}", suggestion), style)
+            ]))
+        })
+        .collect();
+
+    let suggestions_list = List::new(items);
+    frame.render_widget(suggestions_list, inner_area);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {

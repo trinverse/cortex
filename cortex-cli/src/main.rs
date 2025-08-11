@@ -222,7 +222,8 @@ impl App {
             self.terminal.draw(|frame| {
                 UI::draw(frame, &self.state);
                 if let Some(ref mut dialog) = self.dialog {
-                    cortex_tui::dialogs::render_dialog(frame, dialog);
+                    let theme = self.state.theme_manager.get_current_theme();
+                    cortex_tui::dialogs::render_dialog(frame, dialog, theme);
                 }
                 // Render notifications on top
                 self.notification_manager.render(frame);
@@ -418,20 +419,9 @@ impl App {
 
             // History navigation with Up/Down when command line has text
             (KeyCode::Up, modifiers)
-                if modifiers.is_empty() && !self.state.command_line.is_empty() =>
+                if modifiers.is_empty() && !self.state.command_line.is_empty() && !matches!(self.dialog, Some(Dialog::Suggestions(_))) =>
             {
-                // If we have suggestions, navigate through them
-                if !self.state.command_suggestions.is_empty() {
-                    match self.state.selected_suggestion {
-                        Some(idx) if idx > 0 => {
-                            self.state.selected_suggestion = Some(idx - 1);
-                        }
-                        Some(0) | None => {
-                            self.state.selected_suggestion = Some(self.state.command_suggestions.len() - 1);
-                        }
-                        _ => {}
-                    }
-                } else if !self.state.command_history.is_empty() {
+                if !self.state.command_history.is_empty() {
                     let new_index = match self.state.command_history_index {
                         None => self.state.command_history.len() - 1,
                         Some(i) if i > 0 => i - 1,
@@ -443,19 +433,9 @@ impl App {
                 }
             }
             (KeyCode::Down, modifiers)
-                if modifiers.is_empty() && !self.state.command_line.is_empty() =>
+                if modifiers.is_empty() && !self.state.command_line.is_empty() && !matches!(self.dialog, Some(Dialog::Suggestions(_))) =>
             {
-                // If we have suggestions, navigate through them
-                if !self.state.command_suggestions.is_empty() {
-                    match self.state.selected_suggestion {
-                        Some(idx) if idx < self.state.command_suggestions.len() - 1 => {
-                            self.state.selected_suggestion = Some(idx + 1);
-                        }
-                        Some(_) | None => {
-                            self.state.selected_suggestion = Some(0);
-                        }
-                    }
-                } else if let Some(index) = self.state.command_history_index {
+                if let Some(index) = self.state.command_history_index {
                     if index < self.state.command_history.len() - 1 {
                         self.state.command_history_index = Some(index + 1);
                         self.state.command_line = self.state.command_history[index + 1].clone();
@@ -469,16 +449,8 @@ impl App {
 
             // Global keys that always work
             (KeyCode::Tab, _) => {
-                // If we have command suggestions and command line is not empty, accept suggestion
-                if !self.state.command_line.is_empty() && !self.state.command_suggestions.is_empty() {
-                    if let Some(idx) = self.state.selected_suggestion {
-                        if let Some(suggestion) = self.state.command_suggestions.get(idx) {
-                            self.state.command_line = suggestion.clone();
-                            self.state.command_cursor = self.state.command_line.len();
-                            self.state.update_command_suggestions();
-                        }
-                    }
-                } else {
+                // Only toggle panels if not in suggestions dialog
+                if !matches!(self.dialog, Some(Dialog::Suggestions(_))) {
                     self.state.toggle_panel();
                 }
             }
@@ -852,12 +824,34 @@ impl App {
                     self.state.command_cursor -= 1;
                     self.state.command_line.remove(self.state.command_cursor);
                     self.state.update_command_suggestions();
+                    
+                    // Update suggestions dialog
+                    if !self.state.command_suggestions.is_empty() {
+                        self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
+                            cortex_tui::dialogs::SuggestionsDialog::new(
+                                self.state.command_suggestions.clone()
+                            )
+                        ));
+                    } else if let Some(cortex_tui::dialogs::Dialog::Suggestions(_)) = self.dialog {
+                        self.dialog = None;
+                    }
                 }
             }
             (KeyCode::Delete, _) => {
                 if self.state.command_cursor < self.state.command_line.len() {
                     self.state.command_line.remove(self.state.command_cursor);
                     self.state.update_command_suggestions();
+                    
+                    // Update suggestions dialog
+                    if !self.state.command_suggestions.is_empty() {
+                        self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
+                            cortex_tui::dialogs::SuggestionsDialog::new(
+                                self.state.command_suggestions.clone()
+                            )
+                        ));
+                    } else if let Some(cortex_tui::dialogs::Dialog::Suggestions(_)) = self.dialog {
+                        self.dialog = None;
+                    }
                 }
             }
             (KeyCode::Char(' '), modifiers)
@@ -885,6 +879,18 @@ impl App {
                 self.state.command_line.insert(self.state.command_cursor, c);
                 self.state.command_cursor += 1;
                 self.state.update_command_suggestions();
+                
+                // Show suggestions dialog if we have suggestions
+                if !self.state.command_suggestions.is_empty() {
+                    self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
+                        cortex_tui::dialogs::SuggestionsDialog::new(
+                            self.state.command_suggestions.clone()
+                        )
+                    ));
+                } else if let Some(cortex_tui::dialogs::Dialog::Suggestions(_)) = self.dialog {
+                    // Close suggestions dialog if no more suggestions
+                    self.dialog = None;
+                }
             }
 
             _ => {}
@@ -1938,6 +1944,25 @@ impl App {
                         "Theme changed to: {}",
                         dialog.themes[dialog.selected_index].1
                     ));
+                    self.dialog = None;
+                }
+                KeyCode::Esc => {
+                    self.dialog = None;
+                }
+                _ => {}
+            },
+            Some(Dialog::Suggestions(dialog)) => match key.code {
+                KeyCode::Up => {
+                    dialog.move_up();
+                }
+                KeyCode::Down => {
+                    dialog.move_down();
+                }
+                KeyCode::Tab | KeyCode::Enter => {
+                    if let Some(suggestion) = dialog.get_selected_suggestion() {
+                        self.state.command_line = suggestion.clone();
+                        self.state.command_cursor = self.state.command_line.len();
+                    }
                     self.dialog = None;
                 }
                 KeyCode::Esc => {
