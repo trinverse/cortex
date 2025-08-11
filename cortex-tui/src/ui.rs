@@ -365,6 +365,31 @@ impl UI {
         app: &AppState,
         theme: &cortex_core::Theme,
     ) {
+        // Check if we need to show suggestions
+        let has_suggestions = !app.command_suggestions.is_empty();
+        let suggestion_height = if has_suggestions {
+            (app.command_suggestions.len() as u16).min(5) + 1 // Show max 5 suggestions
+        } else {
+            0
+        };
+
+        // Split area to accommodate suggestions if needed
+        let constraints = if has_suggestions {
+            vec![
+                Constraint::Min(3),
+                Constraint::Length(suggestion_height),
+            ]
+        } else {
+            vec![Constraint::Min(3)]
+        };
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
+            .split(area);
+
+        let command_area = chunks[0];
+
         let title = if app.command_line.starts_with('/') {
             " Special Commands (/ for menu) "
         } else {
@@ -376,8 +401,8 @@ impl UI {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.active_border));
 
-        let inner_area = block.inner(area);
-        frame.render_widget(block, area);
+        let inner_area = block.inner(command_area);
+        frame.render_widget(block, command_area);
 
         let prompt = "$ ";
         let text = format!("{}{}", prompt, app.command_line);
@@ -401,6 +426,43 @@ impl UI {
                 inner_area.x + cursor_col as u16,
                 inner_area.y + cursor_line as u16,
             ));
+        }
+
+        // Draw suggestions if available
+        if has_suggestions && chunks.len() > 1 {
+            let suggestions_area = chunks[1];
+            
+            let suggestions_block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.inactive_border))
+                .title(" Suggestions (Tab to accept, ↑↓ to navigate) ");
+
+            let inner_suggestions_area = suggestions_block.inner(suggestions_area);
+            frame.render_widget(suggestions_block, suggestions_area);
+
+            // Create list items from suggestions
+            let items: Vec<ListItem> = app.command_suggestions
+                .iter()
+                .take(5) // Show max 5 suggestions
+                .enumerate()
+                .map(|(idx, suggestion)| {
+                    let is_selected = app.selected_suggestion == Some(idx);
+                    let style = if is_selected {
+                        Style::default()
+                            .fg(theme.selected_fg)
+                            .bg(theme.selected_bg)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(theme.command_line_fg)
+                    };
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!(" {}", suggestion), style)
+                    ]))
+                })
+                .collect();
+
+            let suggestions_list = List::new(items);
+            frame.render_widget(suggestions_list, inner_suggestions_area);
         }
     }
 

@@ -420,7 +420,18 @@ impl App {
             (KeyCode::Up, modifiers)
                 if modifiers.is_empty() && !self.state.command_line.is_empty() =>
             {
-                if !self.state.command_history.is_empty() {
+                // If we have suggestions, navigate through them
+                if !self.state.command_suggestions.is_empty() {
+                    match self.state.selected_suggestion {
+                        Some(idx) if idx > 0 => {
+                            self.state.selected_suggestion = Some(idx - 1);
+                        }
+                        Some(0) | None => {
+                            self.state.selected_suggestion = Some(self.state.command_suggestions.len() - 1);
+                        }
+                        _ => {}
+                    }
+                } else if !self.state.command_history.is_empty() {
                     let new_index = match self.state.command_history_index {
                         None => self.state.command_history.len() - 1,
                         Some(i) if i > 0 => i - 1,
@@ -434,7 +445,17 @@ impl App {
             (KeyCode::Down, modifiers)
                 if modifiers.is_empty() && !self.state.command_line.is_empty() =>
             {
-                if let Some(index) = self.state.command_history_index {
+                // If we have suggestions, navigate through them
+                if !self.state.command_suggestions.is_empty() {
+                    match self.state.selected_suggestion {
+                        Some(idx) if idx < self.state.command_suggestions.len() - 1 => {
+                            self.state.selected_suggestion = Some(idx + 1);
+                        }
+                        Some(_) | None => {
+                            self.state.selected_suggestion = Some(0);
+                        }
+                    }
+                } else if let Some(index) = self.state.command_history_index {
                     if index < self.state.command_history.len() - 1 {
                         self.state.command_history_index = Some(index + 1);
                         self.state.command_line = self.state.command_history[index + 1].clone();
@@ -448,7 +469,18 @@ impl App {
 
             // Global keys that always work
             (KeyCode::Tab, _) => {
-                self.state.toggle_panel();
+                // If we have command suggestions and command line is not empty, accept suggestion
+                if !self.state.command_line.is_empty() && !self.state.command_suggestions.is_empty() {
+                    if let Some(idx) = self.state.selected_suggestion {
+                        if let Some(suggestion) = self.state.command_suggestions.get(idx) {
+                            self.state.command_line = suggestion.clone();
+                            self.state.command_cursor = self.state.command_line.len();
+                            self.state.update_command_suggestions();
+                        }
+                    }
+                } else {
+                    self.state.toggle_panel();
+                }
             }
             (KeyCode::Enter, modifiers)
                 if modifiers.is_empty() && self.state.command_line.is_empty() =>
@@ -813,11 +845,13 @@ impl App {
                 if self.state.command_cursor > 0 {
                     self.state.command_cursor -= 1;
                     self.state.command_line.remove(self.state.command_cursor);
+                    self.state.update_command_suggestions();
                 }
             }
             (KeyCode::Delete, _) => {
                 if self.state.command_cursor < self.state.command_line.len() {
                     self.state.command_line.remove(self.state.command_cursor);
+                    self.state.update_command_suggestions();
                 }
             }
             (KeyCode::Char(' '), modifiers)
@@ -844,6 +878,7 @@ impl App {
             (KeyCode::Char(c), _) => {
                 self.state.command_line.insert(self.state.command_cursor, c);
                 self.state.command_cursor += 1;
+                self.state.update_command_suggestions();
             }
 
             _ => {}

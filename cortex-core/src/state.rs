@@ -297,6 +297,8 @@ pub struct AppState {
     pub command_cursor: usize,
     pub command_history: Vec<String>,
     pub command_history_index: Option<usize>,
+    pub command_suggestions: Vec<String>,
+    pub selected_suggestion: Option<usize>,
     pub status_message: Option<String>,
     pub show_help: bool,
     pub pending_operation: Option<FileOperation>,
@@ -356,6 +358,74 @@ pub enum ActivePanel {
 }
 
 impl AppState {
+    pub fn update_command_suggestions(&mut self) {
+        self.command_suggestions.clear();
+        self.selected_suggestion = None;
+        
+        let cmd_line = self.command_line.trim();
+        
+        // Check if it's a cd command
+        if cmd_line.starts_with("cd ") || cmd_line == "cd" {
+            let path_part = if cmd_line == "cd" {
+                ""
+            } else {
+                &cmd_line[3..]
+            };
+            
+            // Get the current directory
+            let current_dir = &self.active_panel().current_dir;
+            
+            // If path_part is empty or ends with '/', suggest directories in current location
+            let (base_path, prefix) = if path_part.is_empty() {
+                (current_dir.clone(), String::new())
+            } else if let Some(slash_pos) = path_part.rfind('/') {
+                let dir_part = &path_part[..=slash_pos];
+                let prefix = &path_part[slash_pos + 1..];
+                let full_path = if dir_part.starts_with('/') {
+                    std::path::PathBuf::from(dir_part)
+                } else {
+                    current_dir.join(dir_part)
+                };
+                (full_path, prefix.to_string())
+            } else {
+                (current_dir.clone(), path_part.to_string())
+            };
+            
+            // Read directory and get suggestions
+            if let Ok(entries) = std::fs::read_dir(&base_path) {
+                for entry in entries.flatten() {
+                    if let Ok(metadata) = entry.metadata() {
+                        if metadata.is_dir() {
+                            if let Some(name) = entry.file_name().to_str() {
+                                if prefix.is_empty() || name.starts_with(&prefix) {
+                                    self.command_suggestions.push(format!("cd {}{}", 
+                                        if path_part.contains('/') { 
+                                            &path_part[..path_part.rfind('/').unwrap() + 1] 
+                                        } else { 
+                                            "" 
+                                        },
+                                        name
+                                    ));
+                                    
+                                    // Limit suggestions to 10
+                                    if self.command_suggestions.len() >= 10 {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Add more command types here (ls, cp, mv, etc.)
+        
+        // Select first suggestion if any
+        if !self.command_suggestions.is_empty() {
+            self.selected_suggestion = Some(0);
+        }
+    }
+    
     pub fn new() -> Result<Self> {
         let current_dir = std::env::current_dir()?;
         let config_manager = ConfigManager::new()?;
@@ -379,6 +449,8 @@ impl AppState {
             command_cursor: 0,
             command_history: Vec::new(),
             command_history_index: None,
+            command_suggestions: Vec::new(),
+            selected_suggestion: None,
             status_message: None,
             show_help: false,
             pending_operation: None,
