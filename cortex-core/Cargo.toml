@@ -26,9 +26,9 @@ toml = { workspace = true }
 dirs = { workspace = true }
 regex = { workspace = true }
 zip = { workspace = true }
-# ssh2 = { workspace = true, optional = true }  # Commented out - requires OpenSSL
+ssh2 = { workspace = true, optional = true }
 url = { workspace = true }
-# suppaftp = { workspace = true, optional = true }  # Commented out - requires OpenSSL
+suppaftp = { workspace = true, optional = true }
 tar = { workspace = true }
 flate2 = { workspace = true }
 sevenz-rust = { workspace = true }
@@ -50,7 +50,7 @@ env_logger = { workspace = true }
 name = "test_ai"
 path = "../examples/test_ai.rs"
 
-# [features]
-# default = []
-# ssh = ["ssh2", "suppaftp"]
-# full = ["ssh"]
+[features]
+default = []
+ssh = ["ssh2", "suppaftp"]
+full = ["ssh"]

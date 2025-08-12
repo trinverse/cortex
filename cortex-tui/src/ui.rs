@@ -588,7 +588,7 @@ impl UI {
             " Command Output (Running...) [Ctrl+C to cancel] ".to_string()
         } else {
             format!(
-                " Command Output ({} lines) [O to toggle] ",
+                " Command Output ({} lines) [Esc to close] ",
                 app.command_output.len()
             )
         };

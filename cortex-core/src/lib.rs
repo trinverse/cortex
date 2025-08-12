@@ -33,7 +33,11 @@ pub use search::{
 pub use shortcuts::{Action, KeyBinding, ShortcutManager, VimMode};
 pub use state::{ActivePanel, AppState, FileOperation, PanelState, SortMode};
 pub use theme::{Theme, ThemeManager, ThemeMode};
-pub use vfs::{RemoteCredentials, VfsEntry, VfsEntryType, VfsPath, VfsProvider, VirtualFileSystem};
+pub use vfs::{
+    RemoteCredentials, VfsEntry, VfsEntryType, VfsPath, VirtualFileSystem, VfsProviderTrait as VfsProvider
+};
+#[cfg(feature = "ssh")]
+pub use vfs::{FtpProvider, SftpProvider, SshConnectionManager};
 pub use virtual_scroll::{
     VirtualScrollConfig, VirtualScrollManager, VirtualScrollStats, VirtualScroller,
 };

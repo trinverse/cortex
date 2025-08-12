@@ -134,7 +134,7 @@ impl CommandProcessor {
         }
     }
 
-    pub async fn execute_streaming_command_in_dir(
+    pub async fn _execute_streaming_command_in_dir(
         command: &str,
         current_dir: &Path,
         output_sender: mpsc::Sender<String>,
@@ -220,7 +220,7 @@ impl CommandProcessor {
         Ok(exit_code)
     }
 
-    pub fn parse_cd_path(args: &str, current_dir: &Path) -> Option<PathBuf> {
+    pub fn _parse_cd_path(args: &str, current_dir: &Path) -> Option<PathBuf> {
         if args.is_empty() {
             return dirs::home_dir();
         }

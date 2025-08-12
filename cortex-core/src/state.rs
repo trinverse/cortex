@@ -612,6 +612,10 @@ impl AppState {
     pub fn toggle_command_output(&mut self) {
         self.command_output_visible = !self.command_output_visible;
     }
+    
+    pub fn hide_command_output(&mut self) {
+        self.command_output_visible = false;
+    }
 
     pub fn set_command_running(&mut self, running: bool) {
         self.command_running = running;

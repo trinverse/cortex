@@ -8,13 +8,14 @@ use std::path::PathBuf;
 use tokio::sync::mpsc;
 
 pub struct OperationManager {
-    handler: DefaultOperationHandler,
+    _handler: DefaultOperationHandler,
 }
 
+#[allow(dead_code)]
 impl OperationManager {
     pub fn new() -> Self {
         Self {
-            handler: DefaultOperationHandler,
+            _handler: DefaultOperationHandler,
         }
     }
 
@@ -29,7 +30,7 @@ impl OperationManager {
             let (tx, mut rx) = mpsc::channel(100);
 
             // Execute the operation
-            self.handler.execute(op, tx).await?;
+            self._handler.execute(op, tx).await?;
 
             // Drain any remaining progress messages
             while rx.try_recv().is_ok() {}
@@ -49,7 +50,7 @@ impl OperationManager {
             let (tx, mut rx) = mpsc::channel(100);
 
             // Execute the operation
-            self.handler.execute(op, tx).await?;
+            self._handler.execute(op, tx).await?;
 
             // Drain any remaining progress messages
             while rx.try_recv().is_ok() {}
@@ -188,7 +189,7 @@ impl OperationManager {
                         }
                     });
 
-                    self.handler.execute(op, tx).await?;
+                    self._handler.execute(op, tx).await?;
                 }
             }
             FileOperation::Move {
@@ -210,7 +211,7 @@ impl OperationManager {
                         }
                     });
 
-                    self.handler.execute(op, tx).await?;
+                    self._handler.execute(op, tx).await?;
                 }
             }
             FileOperation::Delete { targets } => {
@@ -225,7 +226,7 @@ impl OperationManager {
                         }
                     });
 
-                    self.handler.execute(op, tx).await?;
+                    self._handler.execute(op, tx).await?;
                 }
             }
             FileOperation::DeleteToTrash { targets } => {
@@ -240,7 +241,7 @@ impl OperationManager {
                         }
                     });
 
-                    self.handler.execute(op, tx).await?;
+                    self._handler.execute(op, tx).await?;
                 }
             }
             FileOperation::RestoreFromTrash { targets } => {
@@ -255,7 +256,7 @@ impl OperationManager {
                         }
                     });
 
-                    self.handler.execute(op, tx).await?;
+                    self._handler.execute(op, tx).await?;
                 }
             }
             FileOperation::CopyToClipboard { paths } => {
@@ -269,7 +270,7 @@ impl OperationManager {
                     }
                 });
 
-                self.handler.execute(op, tx).await?;
+                self._handler.execute(op, tx).await?;
             }
             FileOperation::PasteFromClipboard { destination } => {
                 let op = Operation::PasteFromClipboard { dst: destination };
@@ -282,7 +283,7 @@ impl OperationManager {
                     }
                 });
 
-                self.handler.execute(op, tx).await?;
+                self._handler.execute(op, tx).await?;
             }
             FileOperation::CreateDir { path } => {
                 let op = Operation::CreateDir { path };
@@ -295,7 +296,7 @@ impl OperationManager {
                     }
                 });
 
-                self.handler.execute(op, tx).await?;
+                self._handler.execute(op, tx).await?;
             }
             FileOperation::Rename { old_path, new_name } => {
                 let new_path = old_path
@@ -316,7 +317,7 @@ impl OperationManager {
                     }
                 });
 
-                self.handler.execute(op, tx).await?;
+                self._handler.execute(op, tx).await?;
             }
         }
 
