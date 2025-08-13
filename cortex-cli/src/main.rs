@@ -2096,11 +2096,37 @@ impl App {
                     KeyCode::Backspace => {
                         dialog.delete_char();
                     }
-                    KeyCode::Left => {
+                    KeyCode::Left if key.modifiers.is_empty() => {
                         dialog.move_cursor_left();
                     }
-                    KeyCode::Right => {
+                    KeyCode::Right if key.modifiers.is_empty() => {
                         dialog.move_cursor_right();
+                    }
+                    KeyCode::Up if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        dialog.scroll_up();
+                    }
+                    KeyCode::Down if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        dialog.scroll_down();
+                    }
+                    KeyCode::PageUp => {
+                        // Scroll up by multiple lines
+                        for _ in 0..10 {
+                            dialog.scroll_up();
+                        }
+                    }
+                    KeyCode::PageDown => {
+                        // Scroll down by multiple lines
+                        for _ in 0..10 {
+                            dialog.scroll_down();
+                        }
+                    }
+                    KeyCode::Home if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        // Scroll to top
+                        dialog.scroll_position = 0;
+                    }
+                    KeyCode::End if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        // Scroll to bottom
+                        dialog.scroll_to_bottom();
                     }
                     KeyCode::Enter => {
                         if let Some(message) = dialog.submit_message() {

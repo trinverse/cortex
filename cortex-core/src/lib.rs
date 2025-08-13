@@ -6,6 +6,8 @@ pub mod fs;
 pub mod git;
 pub mod memory;
 pub mod operations;
+#[cfg(feature = "ssh")]
+pub mod remote;
 pub mod search;
 pub mod shortcuts;
 pub mod state;
