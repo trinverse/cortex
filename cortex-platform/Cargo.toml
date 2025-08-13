@@ -11,7 +11,7 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 log = "0.4"
 chrono = "0.4"
 
@@ -20,7 +20,7 @@ chrono = "0.4"
 winapi = { version = "0.3", features = ["shellapi", "winuser", "shlobj", "objbase", "winnls"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.25"
+cocoa = "0.26"
 objc = "0.2"
 objc-foundation = "0.1"
 

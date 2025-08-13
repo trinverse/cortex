@@ -1,3 +1,4 @@
+use crate::ai_chat_dialog::AIChatDialog;
 use crate::command_palette_dialog::CommandPaletteDialog;
 use crate::config_dialog::ConfigDialog;
 use crate::connection_dialog::ConnectionDialog;
@@ -31,6 +32,8 @@ pub enum Dialog {
     Config(ConfigDialog),
     SaveConfirm(SaveConfirmDialog),
     ThemeSelection(ThemeSelectionDialog),
+    Suggestions(SuggestionsDialog),
+    AIChat(AIChatDialog),
 }
 
 #[derive(Debug, Clone)]
@@ -325,7 +328,7 @@ impl HelpDialog {
     }
 }
 
-pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog) {
+pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog, theme: &cortex_core::Theme) {
     match dialog {
         Dialog::Confirm(d) => {
             let area = centered_rect(60, 20, frame.area());
@@ -359,6 +362,12 @@ pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog) {
         Dialog::ThemeSelection(d) => {
             let area = centered_rect(50, 30, frame.area());
             render_theme_selection_dialog(frame, area, d)
+        }
+        Dialog::Suggestions(d) => {
+            draw_suggestions_dialog(frame, d, theme)
+        }
+        Dialog::AIChat(d) => {
+            crate::ai_chat_dialog::draw_ai_chat_dialog(frame, d, theme)
         }
     }
 }
@@ -721,6 +730,92 @@ fn render_theme_selection_dialog(frame: &mut Frame, area: Rect, dialog: &ThemeSe
         .style(Style::default().fg(Color::Yellow))
         .alignment(Alignment::Center);
     frame.render_widget(status, chunks[2]);
+}
+
+#[derive(Debug, Clone)]
+pub struct SuggestionsDialog {
+    pub suggestions: Vec<(String, String)>, // (display_name, full_path)
+    pub selected_index: usize,
+}
+
+impl SuggestionsDialog {
+    pub fn new(suggestions: Vec<(String, String)>) -> Self {
+        Self {
+            suggestions,
+            selected_index: 0,
+        }
+    }
+    
+    pub fn move_up(&mut self) {
+        if self.selected_index > 0 {
+            self.selected_index -= 1;
+        } else if !self.suggestions.is_empty() {
+            self.selected_index = self.suggestions.len() - 1;
+        }
+    }
+    
+    pub fn move_down(&mut self) {
+        if self.selected_index < self.suggestions.len().saturating_sub(1) {
+            self.selected_index += 1;
+        } else {
+            self.selected_index = 0;
+        }
+    }
+    
+    pub fn get_selected_suggestion(&self) -> Option<&String> {
+        self.suggestions.get(self.selected_index).map(|(_, path)| path)
+    }
+    
+    pub fn get_selected_display_name(&self) -> Option<&String> {
+        self.suggestions.get(self.selected_index).map(|(name, _)| name)
+    }
+}
+
+fn draw_suggestions_dialog(frame: &mut Frame, dialog: &SuggestionsDialog, theme: &cortex_core::Theme) {
+    // Position the dialog as a small overlay near the command line
+    let area = frame.area();
+    let suggestion_count = dialog.suggestions.len().min(5);
+    let popup_area = Rect {
+        x: area.x + 2,
+        y: area.height.saturating_sub((suggestion_count as u16) + 6), // Just above command line
+        width: area.width.saturating_sub(4).min(50), // Narrower width
+        height: (suggestion_count as u16) + 2, // Exact height needed + borders
+    };
+
+    // Clear the area
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .title(" Directories (Enter=accept, ↑↓=navigate, Esc=close) ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.active_border));
+
+    let inner_area = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    // Create list items from suggestions - show just the directory names
+    let items: Vec<ListItem> = dialog.suggestions
+        .iter()
+        .take(5) // Show max 5 suggestions
+        .enumerate()
+        .map(|(idx, (display_name, _))| {
+            let is_selected = idx == dialog.selected_index;
+            let style = if is_selected {
+                Style::default()
+                    .fg(theme.selected_fg)
+                    .bg(theme.selected_bg)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme.command_line_fg)
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(format!(" {}/", display_name), style) // Add trailing slash to indicate directory
+            ]))
+        })
+        .collect();
+
+    let suggestions_list = List::new(items);
+    frame.render_widget(suggestions_list, inner_area);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
