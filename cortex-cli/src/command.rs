@@ -171,7 +171,7 @@ impl CommandProcessor {
 
             Some(tokio::spawn(async move {
                 while let Ok(Some(line)) = lines.next_line().await {
-                    if !line.trim_start().trim_end().is_empty() {
+                    if !line.trim().is_empty() {
                         let _ = sender_clone.send(line).await;
                     }
                 }
@@ -188,7 +188,7 @@ impl CommandProcessor {
 
             Some(tokio::spawn(async move {
                 while let Ok(Some(line)) = lines.next_line().await {
-                    if !line.chars().all(char::is_whitespace) {
+                    if !line.trim().is_empty() {
                         let _ = sender_clone.send(format!("[ERROR] {}", line)).await;
                     }
                 }

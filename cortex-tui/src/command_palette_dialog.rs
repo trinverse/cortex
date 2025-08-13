@@ -195,31 +195,6 @@ impl CommandPaletteDialog {
                 shortcut: None,
                 category: "Plugins".to_string(),
             },
-            // AI Features
-            CommandInfo {
-                name: "/ai".to_string(),
-                description: "Open AI assistant chat".to_string(),
-                shortcut: None,
-                category: "AI".to_string(),
-            },
-            CommandInfo {
-                name: "/ai-chat".to_string(),
-                description: "Chat with AI for file operations".to_string(),
-                shortcut: None,
-                category: "AI".to_string(),
-            },
-            CommandInfo {
-                name: "/ai-organize".to_string(),
-                description: "Get AI suggestions to organize files".to_string(),
-                shortcut: None,
-                category: "AI".to_string(),
-            },
-            CommandInfo {
-                name: "/ai-help".to_string(),
-                description: "Ask AI for help with commands".to_string(),
-                shortcut: None,
-                category: "AI".to_string(),
-            },
             CommandInfo {
                 name: "/stats".to_string(),
                 description: "Show file statistics".to_string(),

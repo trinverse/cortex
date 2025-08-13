@@ -1,6 +1,5 @@
 use crate::{TrashItem, TrashOperations};
 use anyhow::Result;
-#[allow(deprecated)]
 use cocoa::foundation::NSAutoreleasePool;
 use objc::runtime::Object;
 use objc::{class, msg_send, sel, sel_impl};
@@ -17,7 +16,6 @@ impl MacOSTrash {
 }
 
 impl TrashOperations for MacOSTrash {
-    #[allow(deprecated)]
     fn move_to_trash(&self, path: &Path) -> Result<()> {
         unsafe {
             let _pool = NSAutoreleasePool::new(std::ptr::null_mut());
@@ -50,7 +48,6 @@ impl TrashOperations for MacOSTrash {
         ))
     }
 
-    #[allow(deprecated)]
     fn empty_trash(&self) -> Result<()> {
         unsafe {
             let _pool = NSAutoreleasePool::new(std::ptr::null_mut());

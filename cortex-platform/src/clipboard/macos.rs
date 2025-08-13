@@ -1,8 +1,6 @@
 use crate::ClipboardOperations;
 use anyhow::Result;
-#[allow(deprecated)]
 use cocoa::appkit::{NSPasteboard, NSPasteboardTypeString};
-#[allow(deprecated)]
 use cocoa::foundation::NSAutoreleasePool;
 use objc::runtime::Object;
 use objc::{class, msg_send, sel, sel_impl};
@@ -19,7 +17,6 @@ impl MacOSClipboard {
 }
 
 impl ClipboardOperations for MacOSClipboard {
-    #[allow(deprecated)]
     fn copy_text(&self, text: &str) -> Result<()> {
         unsafe {
             let _pool = NSAutoreleasePool::new(std::ptr::null_mut());
@@ -42,7 +39,6 @@ impl ClipboardOperations for MacOSClipboard {
         }
     }
 
-    #[allow(deprecated)]
     fn paste_text(&self) -> Result<String> {
         unsafe {
             let _pool = NSAutoreleasePool::new(std::ptr::null_mut());
@@ -63,7 +59,6 @@ impl ClipboardOperations for MacOSClipboard {
         }
     }
 
-    #[allow(deprecated)]
     fn copy_files(&self, paths: &[&Path]) -> Result<()> {
         unsafe {
             let _pool = NSAutoreleasePool::new(std::ptr::null_mut());
@@ -95,7 +90,6 @@ impl ClipboardOperations for MacOSClipboard {
         }
     }
 
-    #[allow(deprecated)]
     fn paste_files(&self) -> Result<Vec<String>> {
         unsafe {
             let _pool = NSAutoreleasePool::new(std::ptr::null_mut());

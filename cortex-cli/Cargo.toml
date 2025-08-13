@@ -29,7 +29,6 @@ clap = { version = "4.5", features = ["derive"] }
 crossterm = { workspace = true }
 ratatui = { workspace = true }
 semver = "1.0"
-chrono = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
