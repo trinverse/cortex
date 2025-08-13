@@ -19,3 +19,4 @@ serde = { workspace = true }
 unicode-width = { workspace = true }
 log = { workspace = true }
 humansize = { workspace = true }
+chrono = { workspace = true }

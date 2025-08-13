@@ -137,6 +137,8 @@ struct App {
     context_menu: Option<ContextMenu>,
     _mouse_regions: MouseRegionManager,
     suggestions_dismissed: bool,  // Track if user dismissed suggestions with Esc
+    ai_response_rx: Option<mpsc::UnboundedReceiver<(String, bool)>>,  // (response, is_error)
+    ai_response_tx: mpsc::UnboundedSender<(String, bool)>,  // Channel sender for AI responses
 }
 
 impl App {
@@ -197,6 +199,7 @@ impl App {
         // state.cache_refresher = Some(cache_refresher.clone());
 
         let events = EventHandler::new(Duration::from_millis(100));
+        let (ai_response_tx, ai_response_rx) = mpsc::unbounded_channel();
 
         Ok(Self {
             state,
@@ -216,6 +219,8 @@ impl App {
             context_menu: None,
             _mouse_regions: MouseRegionManager::new(),
             suggestions_dismissed: false,
+            ai_response_rx: Some(ai_response_rx),
+            ai_response_tx,
         })
     }
 
@@ -234,6 +239,15 @@ impl App {
             if let Some(rx) = &mut self.operation_rx {
                 if let Ok(progress) = rx.try_recv() {
                     self.handle_operation_progress(progress);
+                }
+            }
+
+            // Check for AI responses
+            if let Some(rx) = &mut self.ai_response_rx {
+                if let Ok((response, is_error)) = rx.try_recv() {
+                    if let Some(Dialog::AIChat(dialog)) = &mut self.dialog {
+                        dialog.add_assistant_message(response);
+                    }
                 }
             }
 
@@ -1141,6 +1155,21 @@ impl App {
                     "Notifications DISABLED"
                 };
                 self.state.set_status_message(status);
+            }
+            "ai" | "ai-chat" | "ai-help" => {
+                self.state.set_status_message("Opening AI chat...");
+                self.dialog = Some(Dialog::AIChat(cortex_tui::AIChatDialog::new()));
+            }
+            "ai-organize" => {
+                self.state.set_status_message("Opening AI chat for file organization...");
+                let mut dialog = cortex_tui::AIChatDialog::new();
+                // Pre-populate with organization request
+                dialog.messages.push(cortex_tui::Message {
+                    role: cortex_tui::MessageRole::System,
+                    content: "User wants help organizing files in the current directory.".to_string(),
+                    timestamp: chrono::Local::now(),
+                });
+                self.dialog = Some(Dialog::AIChat(dialog));
             }
             "view" => {
                 if let Some(entry) = self.state.active_panel().current_entry() {
@@ -2058,6 +2087,73 @@ impl App {
             },
             Some(Dialog::Suggestions(_)) => {
                 // Suggestions dialog is handled at the beginning of the function
+            },
+            Some(Dialog::AIChat(dialog)) => {
+                match key.code {
+                    KeyCode::Char(c) => {
+                        dialog.insert_char(c);
+                    }
+                    KeyCode::Backspace => {
+                        dialog.delete_char();
+                    }
+                    KeyCode::Left => {
+                        dialog.move_cursor_left();
+                    }
+                    KeyCode::Right => {
+                        dialog.move_cursor_right();
+                    }
+                    KeyCode::Enter => {
+                        if let Some(message) = dialog.submit_message() {
+                            // Debug: Log the message
+                            log::info!("AI Chat: User message: {}", message);
+                            
+                            // Get AI response
+                            if let Some(ai_manager) = self.state.ai_manager.clone() {
+                                log::info!("AI Chat: Manager is available");
+                                
+                                // Create context from current state
+                                let context = cortex_core::ai::AIContext::new(
+                                    self.state.active_panel().current_dir.clone()
+                                )
+                                .with_files(
+                                    self.state.active_panel()
+                                        .marked_files
+                                        .clone()
+                                );
+                                
+                                // Spawn async task to get AI response
+                                let tx = self.ai_response_tx.clone();
+                                tokio::spawn(async move {
+                                    match ai_manager.complete(&message, context).await {
+                                        Ok(response) => {
+                                            log::info!("AI Chat: Got response: {}", response.content);
+                                            let _ = tx.send((response.content, false));
+                                        }
+                                        Err(e) => {
+                                            log::error!("AI Chat: Error: {}", e);
+                                            let _ = tx.send((format!("Error: {}", e), true));
+                                        }
+                                    }
+                                });
+                            } else {
+                                log::warn!("AI Chat: Manager not initialized");
+                                dialog.add_assistant_message(
+                                    "AI is not configured. Please check your settings.".to_string()
+                                );
+                            }
+                        }
+                    }
+                    KeyCode::Up => {
+                        dialog.scroll_up();
+                    }
+                    KeyCode::Down => {
+                        dialog.scroll_down();
+                    }
+                    KeyCode::Esc => {
+                        self.dialog = None;
+                    }
+                    _ => {}
+                }
             },
             None => {}
         }

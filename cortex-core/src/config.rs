@@ -18,6 +18,8 @@ pub struct Config {
     pub plugins: PluginConfig,
     #[serde(default)]
     pub network: NetworkConfig,
+    #[serde(default)]
+    pub ai: AIConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +104,113 @@ pub struct NetworkConfig {
 pub struct CustomKeybinding {
     pub key: String,
     pub command: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AIConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_ai_provider")]
+    pub default_provider: String,
+    #[serde(default = "default_true")]
+    pub require_confirmation: bool,
+    #[serde(default = "default_true")]
+    pub cache_responses: bool,
+    #[serde(default = "default_cache_ttl")]
+    pub cache_ttl_minutes: u64,
+    #[serde(default)]
+    pub ollama: OllamaConfig,
+    #[serde(default)]
+    pub embedded: EmbeddedConfig,
+    #[serde(default)]
+    pub cloud: CloudConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaConfig {
+    #[serde(default = "default_ollama_url")]
+    pub url: String,
+    #[serde(default = "default_ollama_model")]
+    pub model: String,
+    #[serde(default = "default_ai_timeout")]
+    pub timeout_seconds: u64,
+    #[serde(default = "default_context_tokens")]
+    pub context_tokens: usize,
+}
+
+impl Default for AIConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            default_provider: default_ai_provider(),
+            require_confirmation: true,
+            cache_responses: true,
+            cache_ttl_minutes: default_cache_ttl(),
+            ollama: OllamaConfig::default(),
+            embedded: EmbeddedConfig::default(),
+            cloud: CloudConfig::default(),
+        }
+    }
+}
+
+impl Default for OllamaConfig {
+    fn default() -> Self {
+        Self {
+            url: default_ollama_url(),
+            model: default_ollama_model(),
+            timeout_seconds: default_ai_timeout(),
+            context_tokens: default_context_tokens(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddedConfig {
+    #[serde(default = "default_embedded_model")]
+    pub default_model: String,
+    #[serde(default = "default_true")]
+    pub auto_download: bool,
+    #[serde(default = "default_model_cache_dir")]
+    pub model_cache_dir: String,
+    #[serde(default = "default_max_ram_gb")]
+    pub max_ram_gb: f32,
+    #[serde(default = "default_use_gpu")]
+    pub use_gpu: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudConfig {
+    #[serde(default)]
+    pub openai_api_key: Option<String>,
+    #[serde(default)]
+    pub anthropic_api_key: Option<String>,
+    #[serde(default = "default_cloud_model")]
+    pub default_model: String,
+    #[serde(default = "default_max_monthly_cost")]
+    pub max_monthly_cost: f32,
+}
+
+impl Default for EmbeddedConfig {
+    fn default() -> Self {
+        Self {
+            default_model: default_embedded_model(),
+            auto_download: true,
+            model_cache_dir: default_model_cache_dir(),
+            max_ram_gb: default_max_ram_gb(),
+            use_gpu: default_use_gpu(),
+        }
+    }
+}
+
+impl Default for CloudConfig {
+    fn default() -> Self {
+        Self {
+            openai_api_key: None,
+            anthropic_api_key: None,
+            default_model: default_cloud_model(),
+            max_monthly_cost: default_max_monthly_cost(),
+        }
+    }
 }
 
 impl Default for GeneralConfig {
@@ -197,6 +306,45 @@ fn default_plugin_dir() -> String {
 }
 fn default_connection_timeout() -> u64 {
     30
+}
+fn default_ai_provider() -> String {
+    "ollama".to_string()
+}
+fn default_cache_ttl() -> u64 {
+    60
+}
+fn default_ollama_url() -> String {
+    "http://localhost:11434".to_string()
+}
+fn default_ollama_model() -> String {
+    "llama2".to_string()
+}
+fn default_ai_timeout() -> u64 {
+    60
+}
+fn default_context_tokens() -> usize {
+    4096
+}
+fn default_embedded_model() -> String {
+    "tinyllama-1b-chat".to_string()
+}
+fn default_model_cache_dir() -> String {
+    dirs::data_dir()
+        .map(|d| d.join("cortex").join("models").to_string_lossy().to_string())
+        .unwrap_or_else(|| "~/.cortex/models".to_string())
+}
+fn default_max_ram_gb() -> f32 {
+    8.0
+}
+fn default_use_gpu() -> bool {
+    // Auto-detect GPU availability
+    cfg!(target_os = "macos") || std::env::var("CUDA_HOME").is_ok()
+}
+fn default_cloud_model() -> String {
+    "gpt-4-turbo".to_string()
+}
+fn default_max_monthly_cost() -> f32 {
+    10.0  // $10/month limit by default
 }
 
 pub struct ConfigManager {
