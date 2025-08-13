@@ -12,6 +12,7 @@ All documentation is organized in the [`docs/`](./docs/) directory:
 
 ## Features
 
+- **AI-Powered Assistant** - Built-in AI chat for intelligent file management help (Press Ctrl+A)
 - **Dual-panel interface** - Classic orthodox file manager layout
 - **Keyboard-driven** - Efficient navigation with extensive keyboard shortcuts
 - **Cross-platform** - Works on Windows, macOS, and Linux
@@ -79,6 +80,16 @@ cortex /path/to/directory
 # Show version
 cortex --version
 ```
+
+### AI Assistant
+
+Cortex comes with an **AI assistant built-in**! Press `Ctrl+A` to open the AI chat and get help with:
+- File organization strategies
+- Complex file operations
+- Terminal commands
+- And more!
+
+The AI works out-of-the-box with no setup required. For the best experience, get your own free API key from [Groq](https://console.groq.com) (takes 1 minute).
 
 ## Keyboard Shortcuts
 

@@ -244,7 +244,7 @@ impl App {
 
             // Check for AI responses
             if let Some(rx) = &mut self.ai_response_rx {
-                if let Ok((response, is_error)) = rx.try_recv() {
+                if let Ok((response, _is_error)) = rx.try_recv() {
                     if let Some(Dialog::AIChat(dialog)) = &mut self.dialog {
                         dialog.add_assistant_message(response);
                     }

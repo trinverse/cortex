@@ -129,7 +129,7 @@ pub struct ModelManager {
     models_dir: PathBuf,
     registry: ModelRegistry,
     downloaded_models: HashMap<String, PathBuf>,
-    active_model: Option<String>,
+    _active_model: Option<String>,
 }
 
 impl ModelManager {
@@ -148,7 +148,7 @@ impl ModelManager {
                 last_updated: chrono::Utc::now(),
             },
             downloaded_models: HashMap::new(),
-            active_model: None,
+            _active_model: None,
         }
     }
     
