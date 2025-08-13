@@ -103,7 +103,7 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Download artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
       
@@ -114,7 +114,7 @@ jobs:
           ls -la release/
       
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
           name: Cortex ${{ github.event.inputs.version || github.ref_name }}
           tag_name: ${{ github.ref_name || format('v{0}', github.event.inputs.version) }}
@@ -182,7 +182,7 @@ jobs:
       # Download artifacts if we built them
       - name: Download build artifacts
         if: github.event_name != 'release'
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
       
@@ -285,7 +285,7 @@ jobs:
       # Create PR to Homebrew tap repository
       - name: Create Pull Request to Homebrew Tap
         if: secrets.HOMEBREW_TAP_TOKEN != ''
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           push-to-fork: trinverse/homebrew-cortex

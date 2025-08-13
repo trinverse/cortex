@@ -17,12 +17,6 @@ impl LinuxClipboard {
     }
 }
 
-impl Default for LinuxClipboard {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ClipboardOperations for LinuxClipboard {
     fn copy_text(&self, text: &str) -> Result<()> {
         let clipboard = self

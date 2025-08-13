@@ -16,11 +16,7 @@ use cortex_tui::{
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, KeyCode, KeyModifiers},
     execute,
-    style::{Color as CrosstermColor, ResetColor, SetBackgroundColor},
-    terminal::{
-        disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
-        LeaveAlternateScreen,
-    },
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{io, path::PathBuf, time::Duration};
@@ -136,9 +132,6 @@ struct App {
     mouse_handler: MouseHandler,
     context_menu: Option<ContextMenu>,
     _mouse_regions: MouseRegionManager,
-    suggestions_dismissed: bool,  // Track if user dismissed suggestions with Esc
-    ai_response_rx: Option<mpsc::UnboundedReceiver<(String, bool)>>,  // (response, is_error)
-    ai_response_tx: mpsc::UnboundedSender<(String, bool)>,  // Channel sender for AI responses
 }
 
 impl App {
@@ -148,14 +141,9 @@ impl App {
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
 
         let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+        let terminal = Terminal::new(backend)?;
 
         let mut state = AppState::new()?;
-
-        // Set initial terminal background color based on theme
-        let theme = state.theme_manager.get_current_theme();
-        Self::set_terminal_background(&mut terminal, theme)?;
-        terminal.clear()?;
 
         if let Some(path) = initial_path {
             if path.is_dir() {
@@ -199,7 +187,6 @@ impl App {
         // state.cache_refresher = Some(cache_refresher.clone());
 
         let events = EventHandler::new(Duration::from_millis(100));
-        let (ai_response_tx, ai_response_rx) = mpsc::unbounded_channel();
 
         Ok(Self {
             state,
@@ -218,9 +205,6 @@ impl App {
             mouse_handler: MouseHandler::new(),
             context_menu: None,
             _mouse_regions: MouseRegionManager::new(),
-            suggestions_dismissed: false,
-            ai_response_rx: Some(ai_response_rx),
-            ai_response_tx,
         })
     }
 
@@ -229,8 +213,7 @@ impl App {
             self.terminal.draw(|frame| {
                 UI::draw(frame, &self.state);
                 if let Some(ref mut dialog) = self.dialog {
-                    let theme = self.state.theme_manager.get_current_theme();
-                    cortex_tui::dialogs::render_dialog(frame, dialog, theme);
+                    cortex_tui::dialogs::render_dialog(frame, dialog);
                 }
                 // Render notifications on top
                 self.notification_manager.render(frame);
@@ -239,15 +222,6 @@ impl App {
             if let Some(rx) = &mut self.operation_rx {
                 if let Ok(progress) = rx.try_recv() {
                     self.handle_operation_progress(progress);
-                }
-            }
-
-            // Check for AI responses
-            if let Some(rx) = &mut self.ai_response_rx {
-                if let Ok((response, _is_error)) = rx.try_recv() {
-                    if let Some(Dialog::AIChat(dialog)) = &mut self.dialog {
-                        dialog.add_assistant_message(response);
-                    }
                 }
             }
 
@@ -324,14 +298,7 @@ impl App {
                 Event::Key(key_event) => {
                     if self.context_menu.is_some() {
                         self.handle_context_menu_input(key_event).await?;
-                    } else if matches!(self.dialog, Some(Dialog::Suggestions(_))) {
-                        // Suggestions dialog is special - it doesn't block normal input
-                        // Let handle_input process everything
-                        if !self.handle_input(key_event).await? {
-                            break;
-                        }
                     } else if self.dialog.is_some() {
-                        // Other dialogs block input
                         if !self.handle_dialog_input(key_event).await? {
                             break;
                         }
@@ -378,51 +345,7 @@ impl App {
     }
 
     async fn handle_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        // Special handling for suggestions dialog
-        if matches!(self.dialog, Some(Dialog::Suggestions(_))) {
-            match key.code {
-                // Only intercept Up/Down for navigation within suggestions
-                KeyCode::Up => {
-                    if let Some(Dialog::Suggestions(dialog)) = &mut self.dialog {
-                        dialog.move_up();
-                    }
-                    return Ok(true); // Consume this key
-                }
-                KeyCode::Down => {
-                    if let Some(Dialog::Suggestions(dialog)) = &mut self.dialog {
-                        dialog.move_down();
-                    }
-                    return Ok(true); // Consume this key
-                }
-                // Enter accepts the selected suggestion
-                KeyCode::Enter => {
-                    if let Some(Dialog::Suggestions(dialog)) = &self.dialog {
-                        if let Some(suggestion) = dialog.get_selected_suggestion() {
-                            // Replace command line with full cd command
-                            self.state.command_line = format!("cd {}", suggestion);
-                            self.state.command_cursor = self.state.command_line.len();
-                        }
-                    }
-                    // Close dialog and let Enter be processed normally to execute command
-                    self.dialog = None;
-                    // Don't return - let it fall through to normal Enter handling
-                }
-                // Esc closes suggestions without clearing command line
-                KeyCode::Esc => {
-                    self.dialog = None;
-                    self.suggestions_dismissed = true;  // Mark that user dismissed suggestions
-                    // Don't clear suggestions - just close the dialog
-                    // This prevents the dialog from immediately reopening
-                    return Ok(true); // Consume this key - don't process further
-                }
-                // All other keys (including Tab) fall through to normal processing
-                _ => {
-                    // Don't close dialog - let typing continue with suggestions updating
-                }
-            }
-        }
-
-        // Then check for special keys that work globally
+        // First check for special keys that work globally
         match (key.code, key.modifiers) {
             // Navigation keys - work on panels
             (KeyCode::Up, modifiers)
@@ -484,7 +407,7 @@ impl App {
                 }
             }
 
-            // History navigation with Up/Down when command line has text (suggestions dialog handles these keys separately above)
+            // History navigation with Up/Down when command line has text
             (KeyCode::Up, modifiers)
                 if modifiers.is_empty() && !self.state.command_line.is_empty() =>
             {
@@ -516,7 +439,6 @@ impl App {
 
             // Global keys that always work
             (KeyCode::Tab, _) => {
-                // Tab toggles panels (suggestions dialog handles Tab separately above)
                 self.state.toggle_panel();
             }
             (KeyCode::Enter, modifiers)
@@ -579,7 +501,6 @@ impl App {
             (KeyCode::Enter, _) if !self.state.command_line.is_empty() => {
                 // Execute command
                 let command = self.state.command_line.clone();
-                self.suggestions_dismissed = false;  // Reset flag when executing command
 
                 // Check for special / commands
                 if let Some(cmd) = command.strip_prefix("/") {
@@ -626,8 +547,6 @@ impl App {
                 self.state.command_line.clear();
                 self.state.command_cursor = 0;
                 self.state.command_history_index = None;
-                self.state.command_suggestions.clear();
-                self.state.selected_suggestion = None;
             }
 
             // Function keys
@@ -703,11 +622,10 @@ impl App {
             (KeyCode::F(9), _) => {
                 // Cycle through themes
                 self.state.theme_manager.next_theme();
-                let theme = self.state.theme_manager.get_current_theme();
-                Self::set_terminal_background(&mut self.terminal, theme)?;
-                self.terminal.clear()?;
-                self.state
-                    .set_status_message(format!("Theme changed to: {:?}", theme.mode));
+                self.state.set_status_message(format!(
+                    "Theme changed to: {:?}",
+                    self.state.theme_manager.get_current_theme().mode
+                ));
             }
             (KeyCode::F(10), _) => {
                 // Open theme selector or toggle random mode
@@ -876,81 +794,20 @@ impl App {
                 }
             }
             (KeyCode::Esc, _) => {
-                // Clear command line and suggestions
+                // Clear command line
                 self.state.command_line.clear();
                 self.state.command_cursor = 0;
                 self.state.command_history_index = None;
-                self.state.command_suggestions.clear();
-                self.state.selected_suggestion = None;
-                self.suggestions_dismissed = false;  // Reset the flag when clearing command line
             }
             (KeyCode::Backspace, _) => {
                 if self.state.command_cursor > 0 {
                     self.state.command_cursor -= 1;
                     self.state.command_line.remove(self.state.command_cursor);
-                    
-                    // Reset dismissed flag when user modifies the command
-                    if self.suggestions_dismissed {
-                        self.suggestions_dismissed = false;
-                    }
-                    
-                    self.state.update_command_suggestions();
-                    
-                    // Update suggestions dialog only if not dismissed
-                    if !self.state.command_suggestions.is_empty() && !self.suggestions_dismissed {
-                        // Only create dialog if it doesn't exist
-                        if !matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
-                            self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
-                                cortex_tui::dialogs::SuggestionsDialog::new(
-                                    self.state.command_suggestions.clone()
-                                )
-                            ));
-                        } else if let Some(cortex_tui::dialogs::Dialog::Suggestions(dialog)) = &mut self.dialog {
-                            // Update existing dialog
-                            dialog.suggestions = self.state.command_suggestions.clone();
-                            if dialog.selected_index >= dialog.suggestions.len() && !dialog.suggestions.is_empty() {
-                                dialog.selected_index = dialog.suggestions.len() - 1;
-                            }
-                        }
-                    } else {
-                        if matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
-                            self.dialog = None;
-                        }
-                    }
                 }
             }
             (KeyCode::Delete, _) => {
                 if self.state.command_cursor < self.state.command_line.len() {
                     self.state.command_line.remove(self.state.command_cursor);
-                    
-                    // Reset dismissed flag when user modifies the command
-                    if self.suggestions_dismissed {
-                        self.suggestions_dismissed = false;
-                    }
-                    
-                    self.state.update_command_suggestions();
-                    
-                    // Update suggestions dialog only if not dismissed
-                    if !self.state.command_suggestions.is_empty() && !self.suggestions_dismissed {
-                        // Only create dialog if it doesn't exist
-                        if !matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
-                            self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
-                                cortex_tui::dialogs::SuggestionsDialog::new(
-                                    self.state.command_suggestions.clone()
-                                )
-                            ));
-                        } else if let Some(cortex_tui::dialogs::Dialog::Suggestions(dialog)) = &mut self.dialog {
-                            // Update existing dialog
-                            dialog.suggestions = self.state.command_suggestions.clone();
-                            if dialog.selected_index >= dialog.suggestions.len() && !dialog.suggestions.is_empty() {
-                                dialog.selected_index = dialog.suggestions.len() - 1;
-                            }
-                        }
-                    } else {
-                        if matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
-                            self.dialog = None;
-                        }
-                    }
                 }
             }
             (KeyCode::Char(' '), modifiers)
@@ -977,39 +834,6 @@ impl App {
             (KeyCode::Char(c), _) => {
                 self.state.command_line.insert(self.state.command_cursor, c);
                 self.state.command_cursor += 1;
-                
-                // Reset dismissed flag when user modifies the command
-                if self.suggestions_dismissed {
-                    self.suggestions_dismissed = false;
-                }
-                
-                self.state.update_command_suggestions();
-                
-                // Only show suggestions dialog if:
-                // 1. We have suggestions
-                // 2. User hasn't dismissed them with Esc
-                // 3. Dialog is not already showing (or is not a suggestions dialog)
-                if !self.state.command_suggestions.is_empty() && !self.suggestions_dismissed {
-                    // Only create dialog if it doesn't exist or isn't a suggestions dialog
-                    if !matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
-                        self.dialog = Some(cortex_tui::dialogs::Dialog::Suggestions(
-                            cortex_tui::dialogs::SuggestionsDialog::new(
-                                self.state.command_suggestions.clone()
-                            )
-                        ));
-                    } else if let Some(cortex_tui::dialogs::Dialog::Suggestions(dialog)) = &mut self.dialog {
-                        // Update existing dialog with new suggestions
-                        dialog.suggestions = self.state.command_suggestions.clone();
-                        if dialog.selected_index >= dialog.suggestions.len() && !dialog.suggestions.is_empty() {
-                            dialog.selected_index = dialog.suggestions.len() - 1;
-                        }
-                    }
-                } else {
-                    // Close suggestions dialog if no more suggestions or dismissed
-                    if matches!(self.dialog, Some(cortex_tui::dialogs::Dialog::Suggestions(_))) {
-                        self.dialog = None;
-                    }
-                }
             }
 
             _ => {}
@@ -1032,20 +856,14 @@ impl App {
                 if let Some(ref refresher) = self.state.cache_refresher.take() {
                     refresher.stop();
                 }
-                // Reset colors and cleanup terminal before exit
-                execute!(
-                    self.terminal.backend_mut(),
-                    ResetColor,
-                    Clear(ClearType::All)
-                )?;
+                // Cleanup terminal and exit immediately
                 disable_raw_mode()?;
                 execute!(
                     self.terminal.backend_mut(),
                     LeaveAlternateScreen,
                     DisableMouseCapture
                 )?;
-                // Use exit code 130 to signal intentional exit to dev.sh
-                std::process::exit(130);
+                std::process::exit(0);
             }
             "help" | "?" => {
                 self.dialog = Some(Dialog::Help(HelpDialog::new()));
@@ -1155,21 +973,6 @@ impl App {
                     "Notifications DISABLED"
                 };
                 self.state.set_status_message(status);
-            }
-            "ai" | "ai-chat" | "ai-help" => {
-                self.state.set_status_message("Opening AI chat...");
-                self.dialog = Some(Dialog::AIChat(cortex_tui::AIChatDialog::new()));
-            }
-            "ai-organize" => {
-                self.state.set_status_message("Opening AI chat for file organization...");
-                let mut dialog = cortex_tui::AIChatDialog::new();
-                // Pre-populate with organization request
-                dialog.messages.push(cortex_tui::Message {
-                    role: cortex_tui::MessageRole::System,
-                    content: "User wants help organizing files in the current directory.".to_string(),
-                    timestamp: chrono::Local::now(),
-                });
-                self.dialog = Some(Dialog::AIChat(dialog));
             }
             "view" => {
                 if let Some(entry) = self.state.active_panel().current_entry() {
@@ -2085,76 +1888,6 @@ impl App {
                 }
                 _ => {}
             },
-            Some(Dialog::Suggestions(_)) => {
-                // Suggestions dialog is handled at the beginning of the function
-            },
-            Some(Dialog::AIChat(dialog)) => {
-                match key.code {
-                    KeyCode::Char(c) => {
-                        dialog.insert_char(c);
-                    }
-                    KeyCode::Backspace => {
-                        dialog.delete_char();
-                    }
-                    KeyCode::Left => {
-                        dialog.move_cursor_left();
-                    }
-                    KeyCode::Right => {
-                        dialog.move_cursor_right();
-                    }
-                    KeyCode::Enter => {
-                        if let Some(message) = dialog.submit_message() {
-                            // Debug: Log the message
-                            log::info!("AI Chat: User message: {}", message);
-                            
-                            // Get AI response
-                            if let Some(ai_manager) = self.state.ai_manager.clone() {
-                                log::info!("AI Chat: Manager is available");
-                                
-                                // Create context from current state
-                                let context = cortex_core::ai::AIContext::new(
-                                    self.state.active_panel().current_dir.clone()
-                                )
-                                .with_files(
-                                    self.state.active_panel()
-                                        .marked_files
-                                        .clone()
-                                );
-                                
-                                // Spawn async task to get AI response
-                                let tx = self.ai_response_tx.clone();
-                                tokio::spawn(async move {
-                                    match ai_manager.complete(&message, context).await {
-                                        Ok(response) => {
-                                            log::info!("AI Chat: Got response: {}", response.content);
-                                            let _ = tx.send((response.content, false));
-                                        }
-                                        Err(e) => {
-                                            log::error!("AI Chat: Error: {}", e);
-                                            let _ = tx.send((format!("Error: {}", e), true));
-                                        }
-                                    }
-                                });
-                            } else {
-                                log::warn!("AI Chat: Manager not initialized");
-                                dialog.add_assistant_message(
-                                    "AI is not configured. Please check your settings.".to_string()
-                                );
-                            }
-                        }
-                    }
-                    KeyCode::Up => {
-                        dialog.scroll_up();
-                    }
-                    KeyCode::Down => {
-                        dialog.scroll_down();
-                    }
-                    KeyCode::Esc => {
-                        self.dialog = None;
-                    }
-                    _ => {}
-                }
-            },
             None => {}
         }
 
@@ -2914,25 +2647,6 @@ impl App {
         Ok(())
     }
 
-    fn set_terminal_background(
-        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-        theme: &cortex_core::Theme,
-    ) -> Result<()> {
-        // Convert ratatui Color to crossterm Color
-        let bg_color = match theme.background {
-            ratatui::style::Color::Rgb(r, g, b) => CrosstermColor::Rgb { r, g, b },
-            ratatui::style::Color::Reset => CrosstermColor::Reset,
-            _ => CrosstermColor::Reset, // Fallback for other color types
-        };
-
-        execute!(
-            terminal.backend_mut(),
-            SetBackgroundColor(bg_color),
-            Clear(ClearType::All)
-        )?;
-        Ok(())
-    }
-
     async fn cleanup_and_exit(&mut self) -> Result<()> {
         // Stop file monitoring if active
         if let Some(ref monitor) = self.state.file_monitor {
@@ -2940,13 +2654,6 @@ impl App {
                 log::warn!("Failed to stop file monitor: {}", e);
             }
         }
-
-        // Reset terminal colors before exit
-        execute!(
-            self.terminal.backend_mut(),
-            ResetColor,
-            Clear(ClearType::All)
-        )?;
 
         // Cleanup terminal
         disable_raw_mode()?;
@@ -2958,8 +2665,7 @@ impl App {
 
         // Force exit all spawned tasks by terminating the process
         // This ensures no background tasks keep running
-        // Use exit code 130 to signal intentional exit to dev.sh
-        std::process::exit(130);
+        std::process::exit(0);
     }
 }
 

@@ -13,11 +13,6 @@ pub struct UI;
 
 impl UI {
     pub fn draw(frame: &mut Frame, app: &AppState) {
-        let theme = app.theme_manager.get_current_theme();
-
-        // FIRST: Fill entire terminal with theme background
-        Self::draw_background(frame, frame.area(), theme);
-
         // Calculate command line height based on text width
         let terminal_width = frame.area().width as usize;
         let prompt = "$ ";
@@ -39,13 +34,13 @@ impl UI {
                 Constraint::Min(3),
                 Constraint::Length(app.command_output_height),
                 Constraint::Length(command_line_height),
-                Constraint::Length(2), // Increased to 2 for function key bar
+                Constraint::Length(1),
             ]
         } else {
             vec![
                 Constraint::Min(3),
                 Constraint::Length(command_line_height),
-                Constraint::Length(2), // Increased to 2 for function key bar
+                Constraint::Length(1),
             ]
         };
 
@@ -65,6 +60,8 @@ impl UI {
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(panels_area);
+
+        let theme = app.theme_manager.get_current_theme();
         Self::draw_panel(
             frame,
             panels[0],
@@ -147,15 +144,10 @@ impl UI {
         } else {
             format!(" {} ", panel.current_dir.display())
         };
-        // First fill panel area with panel background color
-        let panel_bg = Block::default().style(Style::default().bg(theme.panel_background));
-        frame.render_widget(panel_bg, area);
-
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_style(border_style)
-            .style(Style::default().bg(theme.panel_background));
+            .border_style(border_style);
 
         let inner_area = block.inner(area);
         frame.render_widget(block, area);
@@ -405,20 +397,6 @@ impl UI {
     }
 
     fn draw_status_bar(frame: &mut Frame, area: Rect, app: &AppState, theme: &cortex_core::Theme) {
-        // Split status area into two lines
-        let status_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Length(1)])
-            .split(area);
-
-        // Draw the info line (top)
-        Self::draw_info_line(frame, status_chunks[0], app, theme);
-
-        // Draw the function key bar (bottom)
-        Self::draw_function_key_bar(frame, status_chunks[1], theme);
-    }
-
-    fn draw_info_line(frame: &mut Frame, area: Rect, app: &AppState, theme: &cortex_core::Theme) {
         let active_panel = app.active_panel();
         let current_entry = active_panel.current_entry();
 
@@ -453,8 +431,7 @@ impl UI {
             String::new()
         };
 
-        let theme_name = format!("{:?}", theme.mode);
-        let right_text = format!("{} items | {} | {}", file_count, total_size, theme_name);
+        let right_text = format!("{} items | {} | F1 Help ", file_count, total_size);
 
         // Calculate spacing
         let left_width = left_text.width();
@@ -514,70 +491,6 @@ impl UI {
         frame.render_widget(paragraph, area);
     }
 
-    fn draw_function_key_bar(frame: &mut Frame, area: Rect, theme: &cortex_core::Theme) {
-        // Define function key actions - similar to Far Manager
-        let function_keys = vec![
-            ("F1", "Help"),
-            ("F2", "Menu"),
-            ("F3", "View"),
-            ("F4", "Edit"),
-            ("F5", "Copy"),
-            ("F6", "Move"),
-            ("F7", "MkDir"),
-            ("F8", "Delete"),
-            ("F9", "Theme"),
-            ("F10", "Quit"),
-        ];
-
-        let total_width = area.width as usize;
-        let key_width = total_width / function_keys.len();
-
-        let mut spans = Vec::new();
-
-        for (i, (key, action)) in function_keys.iter().enumerate() {
-            // Create styled key number (inverted colors for emphasis)
-            let key_span = Span::styled(
-                format!("{}", key),
-                Style::default()
-                    .bg(theme.active_border)  // Use active border color for better visibility
-                    .fg(theme.background)      // Use background color for contrast
-                    .add_modifier(Modifier::BOLD),
-            );
-
-            // Create action text with a space before it
-            let action_span = Span::styled(
-                format!(" {}", action),  // Add space before action text
-                Style::default()
-                    .fg(theme.status_bar_fg)
-                    .bg(theme.panel_background), // Use panel background for subtle separation
-            );
-
-            spans.push(key_span);
-            spans.push(action_span);
-
-            // Add padding to distribute evenly
-            if i < function_keys.len() - 1 {
-                let padding_needed = key_width.saturating_sub(key.len() + action.len() + 1); // +1 for the added space
-                spans.push(Span::styled(
-                    " ".repeat(padding_needed),
-                    Style::default().bg(theme.panel_background), // Continue panel background
-                ));
-            }
-        }
-
-        let function_key_line = Line::from(spans);
-
-        let paragraph = Paragraph::new(function_key_line)
-            .style(
-                Style::default()
-                    .bg(theme.panel_background)  // Use panel background instead of status bar bg
-                    .fg(theme.status_bar_fg),
-            )
-            .alignment(Alignment::Left);
-
-        frame.render_widget(paragraph, area);
-    }
-
     fn draw_command_output(
         frame: &mut Frame,
         area: Rect,
@@ -628,11 +541,5 @@ impl UI {
         let list = List::new(output_lines).block(block);
 
         frame.render_widget(list, area);
-    }
-
-    fn draw_background(frame: &mut Frame, area: Rect, theme: &cortex_core::Theme) {
-        // Fill the entire terminal with the theme's background color
-        let background = Block::default().style(Style::default().bg(theme.background));
-        frame.render_widget(background, area);
     }
 }

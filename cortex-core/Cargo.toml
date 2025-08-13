@@ -36,20 +36,9 @@ cortex-plugins = { path = "../cortex-plugins" }
 cortex-platform = { path = "../cortex-platform" }
 crossterm = { workspace = true }
 ratatui = { workspace = true }
-reqwest = { version = "0.11", features = ["json", "stream"] }
-futures = "0.3"
-futures-util = "0.3"
-# For embedded AI
-num_cpus = "1.16"
-sys-info = "0.9"
 
 [dev-dependencies]
 tempfile = { workspace = true }
-env_logger = { workspace = true }
-
-[[example]]
-name = "test_ai"
-path = "../examples/test_ai.rs"
 
 # [features]
 # default = []

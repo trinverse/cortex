@@ -20,18 +20,18 @@ license = "MIT"
 repository = "https://github.com/cortex-fm/cortex"
 
 [workspace.dependencies]
-criterion = "0.7"
+criterion = "0.5"
 tempfile = "3.8"
 tokio = { version = "1.40", features = ["full"] }
 async-trait = "0.1"
 anyhow = "1.0"
-thiserror = "2.0"
+thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-toml = "0.9"
-crossterm = "0.29"
+toml = "0.8"
+crossterm = "0.28"
 ratatui = "0.29"
-dirs = "6.0"
+dirs = "5.0"
 chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
 env_logger = "0.11"
@@ -40,15 +40,12 @@ unicode-width = "0.2"
 humansize = "2.1"
 glob = "0.3"
 walkdir = "2.5"
-
-mlua = { version = "0.11", features = ["lua54", "vendored", "async", "send"] }
-
-notify = "8.2"
-which = "8.0"
-
+notify = "6.1"
+which = "6.0"
+mlua = { version = "0.10", features = ["lua54", "vendored", "async", "send"] }
 clap = { version = "4.5", features = ["derive"] }
 regex = "1.10"
-zip = "4.3"
+zip = "2.1"
 # ssh2 = "0.9"  # Commented out - requires OpenSSL
 url = "2.5"
 # suppaftp = { version = "6.3", features = ["async", "async-native-tls"] }  # Commented out - requires OpenSSL
