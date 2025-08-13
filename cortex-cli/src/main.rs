@@ -3,6 +3,7 @@ use clap::Parser;
 use cortex_core::{
     AppState, DirectoryCache, FileOperation, FileSystem, FileType, LuaPlugin, PluginEvent,
     RemoteCredentials, VfsPath,
+    window::{WindowConfig, WindowManager, WindowMode, WinEvent, TerminalRenderer, manager::MouseButton},
 };
 use cortex_plugins::Plugin;
 use cortex_tui::{
@@ -47,6 +48,15 @@ struct Args {
 
     #[arg(long, help = "Update to latest version")]
     update: bool,
+    
+    #[arg(short = 'w', long, help = "Run in windowed mode (opens in new window)")]
+    windowed: bool,
+    
+    #[arg(short = 't', long, help = "Force terminal mode (stay in current terminal)")]
+    terminal: bool,
+    
+    #[arg(long, help = "Start in fullscreen mode")]
+    fullscreen: bool,
 }
 
 #[tokio::main]
@@ -58,6 +68,22 @@ async fn main() -> Result<()> {
     if args.version {
         println!("Cortex v{}", env!("CARGO_PKG_VERSION"));
         return Ok(());
+    }
+    
+    // Determine window mode
+    let window_mode = if args.terminal {
+        cortex_core::window::WindowMode::Terminal
+    } else if args.fullscreen {
+        cortex_core::window::WindowMode::Fullscreen
+    } else if args.windowed || cortex_core::window::backend::can_create_window() {
+        cortex_core::window::WindowMode::Windowed
+    } else {
+        cortex_core::window::WindowMode::Terminal
+    };
+    
+    // If windowed mode is requested and supported, launch in window
+    if window_mode != cortex_core::window::WindowMode::Terminal {
+        return run_windowed_app(args.path, window_mode).await;
     }
 
     // Handle update checking
@@ -117,6 +143,187 @@ async fn main() -> Result<()> {
 
     let mut app = App::new(args.path).await?;
     app.run().await
+}
+
+async fn run_windowed_app(initial_path: Option<PathBuf>, mode: WindowMode) -> Result<()> {
+    use cortex_core::terminal::TerminalManager;
+    use std::sync::Arc;
+    
+    println!("Starting Cortex in windowed mode...");
+    
+    // Create window configuration
+    let config = WindowConfig {
+        title: format!("Cortex File Manager v{}", env!("CARGO_PKG_VERSION")),
+        width: 1280,
+        height: 800,
+        mode,
+        resizable: true,
+        decorations: true,
+    };
+    
+    // Use spawn_window_thread to create window in its own thread
+    let mut event_rx = WindowManager::spawn_window_thread(config.clone())?;
+    
+    // Initialize renderer (simplified for now)
+    let mut renderer = TerminalRenderer::new(config.width, config.height);
+    
+    // Create app state
+    let mut state = AppState::new()?;
+    if let Some(path) = initial_path {
+        state.left_panel.current_dir = path.clone();
+        state.left_panel.entries = cortex_core::FileSystem::list_directory(&path, false)?;
+    }
+    
+    // Initialize terminal manager for embedded terminals
+    let terminal_manager = Arc::new(TerminalManager::new());
+    state.terminal_manager = Some(terminal_manager.clone());
+    
+    // Create a channel for app events
+    let (app_tx, mut app_rx) = mpsc::unbounded_channel::<AppEvent>();
+    
+    // Main application loop
+    loop {
+        // Process window events
+        while let Ok(event) = event_rx.try_recv() {
+            match event {
+                WinEvent::Close => {
+                    println!("Window closed");
+                    return Ok(());
+                }
+                WinEvent::Resize(width, height) => {
+                    renderer.resize(width, height)?;
+                }
+                WinEvent::KeyPress(ch) => {
+                    // Handle character input
+                    let _ = app_tx.send(AppEvent::KeyPress(ch));
+                }
+                WinEvent::KeyDown(keycode) => {
+                    // Handle special keys
+                    let _ = app_tx.send(AppEvent::KeyDown(keycode));
+                }
+                WinEvent::MouseClick(x, y, button) => {
+                    // Handle mouse clicks
+                    let _ = app_tx.send(AppEvent::MouseClick(x, y, button));
+                }
+                WinEvent::Redraw => {
+                    // Render current state
+                    render_windowed_ui(&mut renderer, &state)?;
+                }
+                _ => {}
+            }
+        }
+        
+        // Process app events
+        while let Ok(event) = app_rx.try_recv() {
+            handle_app_event(&mut state, event)?;
+        }
+        
+        // Small delay to prevent busy waiting
+        tokio::time::sleep(Duration::from_millis(16)).await;
+    }
+}
+
+#[derive(Debug)]
+enum AppEvent {
+    KeyPress(char),
+    KeyDown(winit::event::VirtualKeyCode),
+    MouseClick(f64, f64, MouseButton),
+}
+
+fn handle_app_event(state: &mut AppState, event: AppEvent) -> Result<()> {
+    match event {
+        AppEvent::KeyPress(ch) => {
+            // Handle character input
+            state.command_line.push(ch);
+        }
+        AppEvent::KeyDown(keycode) => {
+            use winit::event::VirtualKeyCode;
+            match keycode {
+                VirtualKeyCode::Return => {
+                    // Execute command
+                    if !state.command_line.is_empty() {
+                        // Process command
+                        state.command_history.push(state.command_line.clone());
+                        state.command_line.clear();
+                    }
+                }
+                VirtualKeyCode::Escape => {
+                    // Clear command line
+                    state.command_line.clear();
+                }
+                VirtualKeyCode::Up => {
+                    // Navigate up in file list
+                    if state.active_panel().selected_index > 0 {
+                        state.active_panel_mut().selected_index -= 1;
+                    }
+                }
+                VirtualKeyCode::Down => {
+                    // Navigate down in file list
+                    let entries_len = state.active_panel().entries.len();
+                    if state.active_panel().selected_index < entries_len.saturating_sub(1) {
+                        state.active_panel_mut().selected_index += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        AppEvent::MouseClick(_x, _y, _button) => {
+            // Handle mouse clicks
+        }
+    }
+    Ok(())
+}
+
+fn render_windowed_ui(renderer: &mut TerminalRenderer, state: &AppState) -> Result<()> {
+    // Create simple text representation of the UI
+    let mut lines = Vec::new();
+    
+    // Title bar
+    lines.push(format!("═══ Cortex File Manager v{} ═══", env!("CARGO_PKG_VERSION")));
+    lines.push(String::new());
+    
+    // Current directory
+    lines.push(format!("Directory: {}", state.left_panel.current_dir.display()));
+    lines.push(String::new());
+    
+    // File list
+    lines.push("Files:".to_string());
+    lines.push("─".repeat(40));
+    
+    let visible_entries = state.left_panel.get_visible_entries();
+    for (i, entry) in visible_entries.iter().enumerate() {
+        let prefix = if i == state.left_panel.selected_index {
+            "► "
+        } else {
+            "  "
+        };
+        
+        let type_indicator = match entry.file_type {
+            FileType::Directory => "/",
+            FileType::File => "",
+            FileType::Symlink => "@",
+            _ => "",
+        };
+        
+        lines.push(format!("{}{}{}", prefix, entry.name, type_indicator));
+    }
+    
+    // Command line
+    lines.push(String::new());
+    lines.push("─".repeat(40));
+    lines.push(format!("Command: {}_", state.command_line));
+    
+    // Status
+    if let Some(ref msg) = state.status_message {
+        lines.push(String::new());
+        lines.push(format!("Status: {}", msg));
+    }
+    
+    // Render to window
+    renderer.render_terminal_content(&lines);
+    renderer.present()?;
+    
+    Ok(())
 }
 
 struct App {

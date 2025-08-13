@@ -4,6 +4,7 @@ use crate::config::ConfigManager;
 use crate::file_monitor::{ChangeNotification, EventCallback, FileMonitorManager};
 use crate::fs::FileEntry;
 use crate::git::GitInfo;
+use crate::terminal::TerminalManager;
 use crate::vfs::{RemoteCredentials, VfsEntry, VfsPath, VirtualFileSystem};
 use anyhow::Result;
 use cortex_plugins::{PluginContext, PluginManager};
@@ -312,6 +313,7 @@ pub struct AppState {
     pub cache_refresher: Option<Arc<CacheRefresher>>,
     pub theme_manager: crate::ThemeManager,
     pub ai_manager: Option<Arc<AIManager>>,
+    pub terminal_manager: Option<Arc<TerminalManager>>,
     // Command execution state
     pub command_output: VecDeque<String>,
     pub command_output_visible: bool,
@@ -505,6 +507,7 @@ impl AppState {
             cache_refresher: None,
             theme_manager: crate::ThemeManager::new(Self::detect_initial_theme()),
             ai_manager,
+            terminal_manager: None,
             command_output: VecDeque::new(),
             command_output_visible: false,
             command_running: false,

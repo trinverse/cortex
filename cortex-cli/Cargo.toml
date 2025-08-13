@@ -20,6 +20,7 @@ cortex-plugins = { path = "../cortex-plugins" }
 cortex-updater = { path = "../cortex-updater" }
 tokio = { workspace = true }
 anyhow = { workspace = true }
+winit = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 dirs = { workspace = true }
