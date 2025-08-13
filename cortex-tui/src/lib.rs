@@ -1,3 +1,4 @@
+pub mod ai_chat_dialog;
 pub mod command_palette_dialog;
 pub mod config_dialog;
 pub mod connection_dialog;
@@ -14,6 +15,7 @@ pub mod ui;
 pub mod viewer;
 pub mod viewer_dialog;
 
+pub use ai_chat_dialog::{AIChatDialog, Message, MessageRole};
 pub use command_palette_dialog::{CommandInfo, CommandPaletteDialog};
 pub use config_dialog::{ConfigDialog, ConfigTab};
 pub use connection_dialog::{ConnectionDialog, ConnectionType};

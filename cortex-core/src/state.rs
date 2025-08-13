@@ -1,3 +1,4 @@
+use crate::ai::AIManager;
 use crate::cache::{CacheConfig, CacheRefresher, DirectoryCache};
 use crate::config::ConfigManager;
 use crate::file_monitor::{ChangeNotification, EventCallback, FileMonitorManager};
@@ -310,6 +311,7 @@ pub struct AppState {
     pub directory_cache: Arc<DirectoryCache>,
     pub cache_refresher: Option<Arc<CacheRefresher>>,
     pub theme_manager: crate::ThemeManager,
+    pub ai_manager: Option<Arc<AIManager>>,
     // Command execution state
     pub command_output: VecDeque<String>,
     pub command_output_visible: bool,
@@ -464,6 +466,13 @@ impl AppState {
         let config_manager = ConfigManager::new()?;
         let auto_reload_enabled = config_manager.get().general.auto_reload;
 
+        // Initialize AI manager if enabled
+        let ai_manager = if config_manager.get().ai.enabled {
+            Some(Arc::new(AIManager::new(config_manager.get().ai.clone())))
+        } else {
+            None
+        };
+
         // Initialize directory cache with configuration
         let cache_config = CacheConfig {
             max_entries: 1000,
@@ -495,6 +504,7 @@ impl AppState {
             directory_cache,
             cache_refresher: None,
             theme_manager: crate::ThemeManager::new(Self::detect_initial_theme()),
+            ai_manager,
             command_output: VecDeque::new(),
             command_output_visible: false,
             command_running: false,

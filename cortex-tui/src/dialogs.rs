@@ -1,3 +1,4 @@
+use crate::ai_chat_dialog::AIChatDialog;
 use crate::command_palette_dialog::CommandPaletteDialog;
 use crate::config_dialog::ConfigDialog;
 use crate::connection_dialog::ConnectionDialog;
@@ -32,6 +33,7 @@ pub enum Dialog {
     SaveConfirm(SaveConfirmDialog),
     ThemeSelection(ThemeSelectionDialog),
     Suggestions(SuggestionsDialog),
+    AIChat(AIChatDialog),
 }
 
 #[derive(Debug, Clone)]
@@ -363,6 +365,9 @@ pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog, theme: &cortex_core
         }
         Dialog::Suggestions(d) => {
             draw_suggestions_dialog(frame, d, theme)
+        }
+        Dialog::AIChat(d) => {
+            crate::ai_chat_dialog::draw_ai_chat_dialog(frame, d, theme)
         }
     }
 }
