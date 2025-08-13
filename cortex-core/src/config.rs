@@ -181,6 +181,8 @@ pub struct EmbeddedConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CloudConfig {
     #[serde(default)]
+    pub groq_api_key: Option<String>,
+    #[serde(default)]
     pub openai_api_key: Option<String>,
     #[serde(default)]
     pub anthropic_api_key: Option<String>,
@@ -205,6 +207,7 @@ impl Default for EmbeddedConfig {
 impl Default for CloudConfig {
     fn default() -> Self {
         Self {
+            groq_api_key: None,
             openai_api_key: None,
             anthropic_api_key: None,
             default_model: default_cloud_model(),

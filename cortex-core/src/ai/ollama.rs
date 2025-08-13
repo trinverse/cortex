@@ -10,7 +10,7 @@ pub struct OllamaProvider {
     base_url: String,
     model: String,
     client: Client,
-    timeout: Duration,
+    _timeout: Duration,
 }
 
 #[derive(Debug, Serialize)]
@@ -32,7 +32,7 @@ struct OllamaOptions {
 struct OllamaResponse {
     response: String,
     done: bool,
-    total_duration: Option<u64>,
+    _total_duration: Option<u64>,
     eval_count: Option<usize>,
 }
 
@@ -50,10 +50,11 @@ impl OllamaProvider {
             base_url,
             model,
             client,
-            timeout: Duration::from_secs(60),
+            _timeout: Duration::from_secs(60),
         })
     }
     
+    #[allow(dead_code)]
     async fn check_availability(&self) -> bool {
         let url = format!("{}/api/tags", self.base_url);
         
