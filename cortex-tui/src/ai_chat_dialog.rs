@@ -1,7 +1,8 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    text::{Line, Span},
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
 
@@ -82,6 +83,7 @@ impl AIChatDialog {
             self.input.clear();
             self.cursor_position = 0;
             self.is_processing = true;
+            self.scroll_to_bottom(); // Auto-scroll when user sends a message
             Some(message)
         } else {
             None
@@ -96,6 +98,7 @@ impl AIChatDialog {
         });
         self.is_processing = false;
         self.streaming_response = None;
+        self.scroll_to_bottom();
     }
     
     pub fn update_streaming_response(&mut self, chunk: String) {
@@ -104,6 +107,7 @@ impl AIChatDialog {
         } else {
             self.streaming_response = Some(chunk);
         }
+        self.scroll_to_bottom();
     }
     
     pub fn finalize_streaming_response(&mut self) {
@@ -121,9 +125,48 @@ impl AIChatDialog {
     pub fn scroll_down(&mut self) {
         self.scroll_position += 1;
     }
+    
+    pub fn scroll_to_bottom(&mut self) {
+        // Calculate total lines needed for all messages
+        let total_lines = self.calculate_total_lines();
+        // We want to scroll to show the bottom of the content
+        // Assuming viewport is about 20-30 lines, we leave a small margin
+        self.scroll_position = total_lines.saturating_sub(5);
+    }
+    
+    pub fn scroll_to_bottom_for_viewport(&mut self, viewport_height: usize) {
+        // More accurate scrolling when we know the viewport height
+        let total_lines = self.calculate_total_lines();
+        if total_lines > viewport_height {
+            self.scroll_position = total_lines - viewport_height + 2; // Small margin
+        } else {
+            self.scroll_position = 0;
+        }
+    }
+    
+    fn calculate_total_lines(&self) -> usize {
+        let mut lines = 0;
+        
+        for msg in &self.messages {
+            // Count actual lines in the message
+            if msg.role != MessageRole::System {
+                lines += 1; // For timestamp/prefix line
+            }
+            lines += msg.content.lines().count().max(1);
+            lines += 1; // Spacing between messages
+        }
+        
+        if let Some(ref response) = self.streaming_response {
+            lines += 1; // Timestamp/prefix
+            lines += response.lines().count().max(1);
+            lines += 1; // Cursor line
+        }
+        
+        lines
+    }
 }
 
-pub fn draw_ai_chat_dialog(frame: &mut Frame, dialog: &AIChatDialog, theme: &cortex_core::Theme) {
+pub fn draw_ai_chat_dialog(frame: &mut Frame, dialog: &mut AIChatDialog, theme: &cortex_core::Theme) {
     let size = frame.area();
     
     // Calculate dialog size (80% width, 70% height)
@@ -152,44 +195,99 @@ pub fn draw_ai_chat_dialog(frame: &mut Frame, dialog: &AIChatDialog, theme: &cor
         ])
         .split(dialog_area);
     
-    // Draw chat messages
-    let mut messages: Vec<ListItem> = Vec::new();
+    // Build chat messages as Lines for Paragraph
+    let mut lines: Vec<Line> = Vec::new();
+    
     for msg in &dialog.messages {
-        let style = match msg.role {
-            MessageRole::User => Style::default().fg(theme.info),
-            MessageRole::Assistant => Style::default().fg(theme.normal_text),
-            MessageRole::System => Style::default().fg(theme.dim_text).add_modifier(Modifier::ITALIC),
+        let (style, prefix) = match msg.role {
+            MessageRole::User => (
+                Style::default().fg(theme.info),
+                "You: "
+            ),
+            MessageRole::Assistant => (
+                Style::default().fg(theme.normal_text),
+                "AI: "
+            ),
+            MessageRole::System => (
+                Style::default().fg(theme.dim_text).add_modifier(Modifier::ITALIC),
+                ""
+            ),
         };
         
-        let prefix = match msg.role {
-            MessageRole::User => "You: ",
-            MessageRole::Assistant => "AI: ",
-            MessageRole::System => "",
-        };
+        // Add timestamp if not system message
+        if msg.role != MessageRole::System {
+            let timestamp = msg.timestamp.format("%H:%M:%S").to_string();
+            lines.push(Line::from(vec![
+                Span::styled(format!("[{}] ", timestamp), Style::default().fg(theme.dim_text)),
+                Span::styled(prefix, style.add_modifier(Modifier::BOLD)),
+            ]));
+        }
         
-        let content = format!("{}{}", prefix, msg.content);
-        messages.push(ListItem::new(content).style(style));
+        // Split content into lines for better wrapping
+        for line in msg.content.lines() {
+            if line.is_empty() {
+                lines.push(Line::from(""));
+            } else {
+                lines.push(Line::from(Span::styled(line, style)));
+            }
+        }
+        
+        // Add spacing between messages
+        lines.push(Line::from(""));
     }
     
     // Add streaming response if present
     if let Some(ref response) = dialog.streaming_response {
-        messages.push(
-            ListItem::new(format!("AI: {}", response))
-                .style(Style::default().fg(theme.normal_text))
-        );
+        let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
+        lines.push(Line::from(vec![
+            Span::styled(format!("[{}] ", timestamp), Style::default().fg(theme.dim_text)),
+            Span::styled("AI: ", Style::default().fg(theme.normal_text).add_modifier(Modifier::BOLD)),
+        ]));
+        
+        for line in response.lines() {
+            lines.push(Line::from(Span::styled(
+                line,
+                Style::default().fg(theme.normal_text)
+            )));
+        }
+        
+        // Add blinking cursor to show it's still streaming
+        lines.push(Line::from(Span::styled(
+            "▊",
+            Style::default().fg(theme.warning).add_modifier(Modifier::SLOW_BLINK)
+        )));
     }
     
-    let messages_list = List::new(messages)
+    // Create title with scroll indicators
+    let total_lines = dialog.calculate_total_lines();
+    let viewport_height = chunks[0].height.saturating_sub(2) as usize; // Subtract borders
+    let can_scroll_up = dialog.scroll_position > 0;
+    let can_scroll_down = dialog.scroll_position + viewport_height < total_lines;
+    
+    let title = if can_scroll_up && can_scroll_down {
+        " AI Assistant Chat [↑↓ Scroll: Ctrl+Up/Down, PgUp/PgDn] "
+    } else if can_scroll_up {
+        " AI Assistant Chat [↑ Scroll up available] "
+    } else if can_scroll_down {
+        " AI Assistant Chat [↓ More messages below] "
+    } else {
+        " AI Assistant Chat "
+    };
+    
+    // Create scrollable paragraph
+    let messages_paragraph = Paragraph::new(lines)
         .block(
             Block::default()
-                .title(" AI Assistant Chat ")
+                .title(title)
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(theme.active_border))
                 .style(Style::default().bg(theme.panel_background))
         )
-        .style(Style::default().bg(theme.panel_background));
+        .style(Style::default().bg(theme.panel_background))
+        .wrap(Wrap { trim: false })
+        .scroll((dialog.scroll_position as u16, 0));
     
-    frame.render_widget(messages_list, chunks[0]);
+    frame.render_widget(messages_paragraph, chunks[0]);
     
     // Draw input area
     let input_block = Block::default()

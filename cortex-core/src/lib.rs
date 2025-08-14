@@ -6,12 +6,16 @@ pub mod fs;
 pub mod git;
 pub mod memory;
 pub mod operations;
+#[cfg(feature = "ssh")]
+pub mod remote;
 pub mod search;
 pub mod shortcuts;
 pub mod state;
+pub mod terminal;
 pub mod theme;
 pub mod vfs;
 pub mod virtual_scroll;
+pub mod window;
 
 pub use cache::{CacheConfig, CacheRefresher, CacheStatistics, DirectoryCache};
 pub use config::{Config, ConfigManager};

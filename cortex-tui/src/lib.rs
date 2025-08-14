@@ -11,6 +11,7 @@ pub mod mouse;
 pub mod notification;
 pub mod plugin_dialog;
 pub mod search_dialog;
+pub mod terminal_view;
 pub mod ui;
 pub mod viewer;
 pub mod viewer_dialog;

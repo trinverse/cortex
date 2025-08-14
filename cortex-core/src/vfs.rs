@@ -1,10 +1,15 @@
-// Temporary VFS without SSH/FTP support (to build without OpenSSL)
+// Virtual File System with modular SSH/SFTP/FTP support
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::PathBuf;
 use std::time::SystemTime;
+
+#[cfg(feature = "ssh")]
+use crate::remote::{SshConnectionManager, SftpProvider, FtpProvider};
+#[cfg(feature = "ssh")]
+use std::sync::Arc;
 
 /// Virtual File System - abstraction over regular files and archive contents
 pub struct VirtualFileSystem {
@@ -52,6 +57,10 @@ pub enum VfsEntryType {
 }
 
 /// Connection credentials for remote providers
+#[cfg(feature = "ssh")]
+pub use crate::remote::ssh_manager::RemoteCredentials;
+
+#[cfg(not(feature = "ssh"))]
 #[derive(Debug, Clone)]
 pub struct RemoteCredentials {
     pub username: String,
@@ -79,12 +88,26 @@ impl Default for VirtualFileSystem {
 
 impl VirtualFileSystem {
     pub fn new() -> Self {
-        Self {
-            providers: vec![
-                Box::new(LocalFileSystemProvider),
-                Box::new(ArchiveProvider::new()),
-            ],
+        #[allow(unused_mut)]
+        let mut providers: Vec<Box<dyn VfsProvider>> = vec![
+            Box::new(LocalFileSystemProvider),
+            Box::new(ArchiveProvider::new()),
+        ];
+        
+        #[cfg(feature = "ssh")]
+        {
+            let ssh_manager = Arc::new(SshConnectionManager::new());
+            let credentials = crate::remote::ssh_manager::RemoteCredentials {
+                username: String::new(),
+                password: None,
+                private_key_path: None,
+                passphrase: None,
+            };
+            providers.push(Box::new(SftpProvider::new(ssh_manager, credentials.clone())));
+            providers.push(Box::new(FtpProvider::new()));
         }
+        
+        Self { providers }
     }
 
     pub fn list_entries(&self, path: &VfsPath) -> Result<Vec<VfsEntry>> {
@@ -297,6 +320,18 @@ impl VirtualFileSystemBuilder {
         Self {
             providers: vec![Box::new(LocalFileSystemProvider)],
         }
+    }
+    
+    #[cfg(feature = "ssh")]
+    pub fn with_sftp_provider(mut self, provider: SftpProvider) -> Self {
+        self.providers.push(Box::new(provider));
+        self
+    }
+    
+    #[cfg(feature = "ssh")]
+    pub fn with_ftp_provider(mut self, provider: FtpProvider) -> Self {
+        self.providers.push(Box::new(provider));
+        self
     }
 
     pub fn with_archive_provider(mut self) -> Self {
