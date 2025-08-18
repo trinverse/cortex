@@ -57,8 +57,8 @@ flate2 = "1.0"
 sevenz-rust = "0.6"
 
 # Terminal emulation dependencies
-portable-pty = "0.8"
-vt100 = "0.15"
+portable-pty = "0.9"
+vt100 = "0.16"
 strip-ansi-escapes = "0.2"
 
 # Window creation dependencies
