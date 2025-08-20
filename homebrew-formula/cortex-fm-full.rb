@@ -29,7 +29,7 @@ class CortexFmFull < Formula
     end
   end
   def install
-    if build.bottle?
+    if (buildpath/"cortex").exist?
       # Pre-built binary
       bin.install "cortex" => "cortex-fm"
     else
