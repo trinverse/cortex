@@ -20,7 +20,8 @@ class CortexFmFull < Formula
     if Hardware::CPU.arm?
       # macOS ARM binary will be available after GitHub Actions build
       url "https://github.com/trinverse/cortex/releases/download/v0.1.0/cortex-v0.1.0-aarch64-apple-darwin.tar.gz"
-      sha256 "PENDING_MACOS_ARM64_SHA256"
+      # macOS ARM binary not yet available
+      # Remove this section until a valid binary and SHA256 are available
     else
       # macOS Intel binary will be available after GitHub Actions build  
       url "https://github.com/trinverse/cortex/releases/download/v0.1.0/cortex-v0.1.0-x86_64-apple-darwin.tar.gz"
