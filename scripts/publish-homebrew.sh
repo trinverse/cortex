@@ -22,7 +22,7 @@ cd homebrew-cortex
 # Copy the formula
 echo "Copying formula..."
 mkdir -p Formula
-cp /home/ashish/code/cortex/homebrew-formula/cortex.rb Formula/
+cp "$(dirname "$0")/../homebrew-formula/cortex.rb" Formula/
 
 # Commit and push
 git add Formula/cortex.rb
