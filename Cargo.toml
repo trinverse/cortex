@@ -65,7 +65,7 @@ strip-ansi-escapes = "0.2"
 winit = "0.28"
 raw-window-handle = "0.5"
 pixels = "0.12"
-wgpu = "0.16"
+wgpu = "26.0"
 
 [profile.release]
 opt-level = 3
