@@ -28,7 +28,6 @@ class CortexFmFull < Formula
       sha256 "PENDING_MACOS_X86_64_SHA256"
     end
   end
-
   def install
     if build.bottle?
       # Pre-built binary
