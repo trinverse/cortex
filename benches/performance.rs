@@ -184,7 +184,6 @@ fn bench_shortcuts(c: &mut Criterion) {
 
     // Test common shortcuts
     let test_keys = vec![
-        (KeyCode::F(5), KeyModifiers::NONE),
         (KeyCode::Char('c'), KeyModifiers::CONTROL),
         (KeyCode::Char('h'), KeyModifiers::NONE), // Vim mode
     ];

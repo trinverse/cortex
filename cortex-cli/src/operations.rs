@@ -58,6 +58,7 @@ impl OperationManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn prepare_copy(state: &AppState) -> Option<FileOperation> {
         let source_panel = state.active_panel();
         let dest_panel = state.inactive_panel();
@@ -80,6 +81,7 @@ impl OperationManager {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn prepare_move(state: &AppState) -> Option<FileOperation> {
         let source_panel = state.active_panel();
         let dest_panel = state.inactive_panel();

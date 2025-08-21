@@ -70,12 +70,6 @@ impl CommandPalette {
             
             // Help commands
             Command {
-                name: "/help".to_string(),
-                description: "Show help dialog".to_string(),
-                shortcut: Some("F1".to_string()),
-                category: CommandCategory::Help,
-            },
-            Command {
                 name: "/keys".to_string(),
                 description: "Show keyboard shortcuts".to_string(),
                 shortcut: None,
@@ -88,57 +82,7 @@ impl CommandPalette {
                 category: CommandCategory::Help,
             },
             
-            // File operations
-            Command {
-                name: "/copy".to_string(),
-                description: "Copy selected files".to_string(),
-                shortcut: Some("F5".to_string()),
-                category: CommandCategory::FileOperations,
-            },
-            Command {
-                name: "/move".to_string(),
-                description: "Move selected files".to_string(),
-                shortcut: Some("F6".to_string()),
-                category: CommandCategory::FileOperations,
-            },
-            Command {
-                name: "/delete".to_string(),
-                description: "Delete selected files".to_string(),
-                shortcut: Some("F8".to_string()),
-                category: CommandCategory::FileOperations,
-            },
-            Command {
-                name: "/mkdir".to_string(),
-                description: "Create new directory".to_string(),
-                shortcut: Some("F7".to_string()),
-                category: CommandCategory::FileOperations,
-            },
-            Command {
-                name: "/rename".to_string(),
-                description: "Rename current file".to_string(),
-                shortcut: Some("Ctrl+R".to_string()),
-                category: CommandCategory::FileOperations,
-            },
-            Command {
-                name: "/touch".to_string(),
-                description: "Create new empty file".to_string(),
-                shortcut: None,
-                category: CommandCategory::FileOperations,
-            },
-            
             // View commands
-            Command {
-                name: "/view".to_string(),
-                description: "View current file".to_string(),
-                shortcut: Some("F3".to_string()),
-                category: CommandCategory::View,
-            },
-            Command {
-                name: "/edit".to_string(),
-                description: "Edit current file".to_string(),
-                shortcut: Some("F4".to_string()),
-                category: CommandCategory::View,
-            },
             Command {
                 name: "/hex".to_string(),
                 description: "View file in hex mode".to_string(),
@@ -156,7 +100,7 @@ impl CommandPalette {
             Command {
                 name: "/find".to_string(),
                 description: "Find files by name".to_string(),
-                shortcut: Some("Alt+F7".to_string()),
+                shortcut: Some("Ctrl+F".to_string()),
                 category: CommandCategory::Search,
             },
             Command {
@@ -248,6 +192,12 @@ impl CommandPalette {
                 description: "Change sort mode".to_string(),
                 shortcut: None,
                 category: CommandCategory::View,
+            },
+            Command {
+                name: "/api-key".to_string(),
+                description: "Configure API keys".to_string(),
+                shortcut: Some("Ctrl+K".to_string()),
+                category: CommandCategory::System,
             },
             Command {
                 name: "/config".to_string(),

@@ -63,56 +63,6 @@ impl CommandPaletteDialog {
                 category: "System".to_string(),
             },
             CommandInfo {
-                name: "/help".to_string(),
-                description: "Show help dialog".to_string(),
-                shortcut: Some("F1".to_string()),
-                category: "Help".to_string(),
-            },
-            // File operations
-            CommandInfo {
-                name: "/copy".to_string(),
-                description: "Copy selected files".to_string(),
-                shortcut: Some("F5".to_string()),
-                category: "Files".to_string(),
-            },
-            CommandInfo {
-                name: "/move".to_string(),
-                description: "Move selected files".to_string(),
-                shortcut: Some("F6".to_string()),
-                category: "Files".to_string(),
-            },
-            CommandInfo {
-                name: "/delete".to_string(),
-                description: "Delete selected files".to_string(),
-                shortcut: Some("F8".to_string()),
-                category: "Files".to_string(),
-            },
-            CommandInfo {
-                name: "/mkdir".to_string(),
-                description: "Create new directory".to_string(),
-                shortcut: Some("F7".to_string()),
-                category: "Files".to_string(),
-            },
-            CommandInfo {
-                name: "/rename".to_string(),
-                description: "Rename current file".to_string(),
-                shortcut: None,
-                category: "Files".to_string(),
-            },
-            // View
-            CommandInfo {
-                name: "/view".to_string(),
-                description: "View current file".to_string(),
-                shortcut: Some("F3".to_string()),
-                category: "View".to_string(),
-            },
-            CommandInfo {
-                name: "/edit".to_string(),
-                description: "Edit current file".to_string(),
-                shortcut: Some("F4".to_string()),
-                category: "View".to_string(),
-            },
-            CommandInfo {
                 name: "/filter".to_string(),
                 description: "Quick filter current panel".to_string(),
                 shortcut: Some("Ctrl+F".to_string()),
@@ -170,6 +120,12 @@ impl CommandPaletteDialog {
                 category: "Remote".to_string(),
             },
             // Configuration
+            CommandInfo {
+                name: "/api-key".to_string(),
+                description: "Configure API keys for AI providers".to_string(),
+                shortcut: Some("Ctrl+K".to_string()),
+                category: "Settings".to_string(),
+            },
             CommandInfo {
                 name: "/config".to_string(),
                 description: "Open configuration settings".to_string(),

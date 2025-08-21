@@ -1,4 +1,5 @@
 use crate::ai_chat_dialog::AIChatDialog;
+use crate::api_key_dialog::APIKeyDialog;
 use crate::command_palette_dialog::CommandPaletteDialog;
 use crate::config_dialog::ConfigDialog;
 use crate::connection_dialog::ConnectionDialog;
@@ -34,6 +35,7 @@ pub enum Dialog {
     ThemeSelection(ThemeSelectionDialog),
     Suggestions(SuggestionsDialog),
     AIChat(AIChatDialog),
+    APIKey(APIKeyDialog),
 }
 
 #[derive(Debug, Clone)]
@@ -292,7 +294,7 @@ impl HelpDialog {
             ("Alt+4".to_string(), "Sort by extension".to_string()),
             ("".to_string(), "".to_string()),
             ("Other".to_string(), "".to_string()),
-            ("F1".to_string(), "This help".to_string()),
+            ("Ctrl+K".to_string(), "API Key Configuration".to_string()),
             ("Ctrl+O / :".to_string(), "Command mode".to_string()),
             ("Ctrl+R".to_string(), "Refresh panels".to_string()),
             ("Ctrl+Q".to_string(), "Quit".to_string()),
@@ -368,6 +370,10 @@ pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog, theme: &cortex_core
         }
         Dialog::AIChat(d) => {
             crate::ai_chat_dialog::draw_ai_chat_dialog(frame, d, theme)
+        }
+        Dialog::APIKey(d) => {
+            let area = frame.area();
+            d.render(frame, area)
         }
     }
 }

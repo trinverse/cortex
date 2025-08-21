@@ -102,7 +102,6 @@ impl KeyBinding {
         match (key.code, key.modifiers) {
             (KeyCode::Char('q'), KeyModifiers::CONTROL) => Some(Self::Quit),
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(Self::Quit),
-            (KeyCode::F(1), _) => Some(Self::Help),
             (KeyCode::Char('?'), _) => Some(Self::Help),
 
             (KeyCode::Up, _) => Some(Self::Up),
@@ -117,10 +116,6 @@ impl KeyBinding {
             (KeyCode::PageDown, _) => Some(Self::PageDown),
             (KeyCode::Tab, _) => Some(Self::Tab),
 
-            (KeyCode::F(5), _) => Some(Self::Copy),
-            (KeyCode::F(6), _) => Some(Self::Move),
-            (KeyCode::F(8), _) => Some(Self::Delete),
-            (KeyCode::F(7), _) => Some(Self::MakeDir),
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => Some(Self::Rename),
 
             (KeyCode::Char('/'), _) => Some(Self::Search),
@@ -130,8 +125,6 @@ impl KeyBinding {
             (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Self::UnmarkAll),
             (KeyCode::Char('r'), KeyModifiers::ALT) => Some(Self::Refresh),
 
-            (KeyCode::F(3), _) => Some(Self::ViewFile),
-            (KeyCode::F(4), _) => Some(Self::EditFile),
 
             (KeyCode::Char('1'), KeyModifiers::ALT) => Some(Self::SortByName),
             (KeyCode::Char('2'), KeyModifiers::ALT) => Some(Self::SortBySize),
