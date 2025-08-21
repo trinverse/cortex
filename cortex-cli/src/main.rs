@@ -9,7 +9,7 @@ use cortex_plugins::Plugin;
 use cortex_tui::{
     CommandPaletteDialog, ConfigDialog, ConnectionDialog, ConnectionType, ContextMenu,
     ContextMenuAction, Dialog, EditorDialog, ErrorDialog, Event, EventHandler, FileViewer,
-    FilterDialog, HelpDialog, InputDialog, MouseAction, MouseHandler, MouseRegionManager,
+    FilterDialog, InputDialog, MouseAction, MouseHandler, MouseRegionManager,
     NotificationManager, NotificationType, PluginDialog, Position, ProgressDialog, SaveChoice,
     SaveConfirmDialog, SearchDialog, SearchState, TextEditor, ThemeSelectionDialog, ViewerDialog,
     UI,
@@ -59,8 +59,7 @@ struct Args {
     fullscreen: bool,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     env_logger::init();
 
     let args = Args::parse();
@@ -71,21 +70,39 @@ async fn main() -> Result<()> {
     }
     
     // Determine window mode
-    let window_mode = if args.terminal {
+    // Default to terminal mode unless explicitly requested otherwise
+    let window_mode = if args.terminal || !args.windowed {
         cortex_core::window::WindowMode::Terminal
     } else if args.fullscreen {
         cortex_core::window::WindowMode::Fullscreen
-    } else if args.windowed || cortex_core::window::backend::can_create_window() {
+    } else if args.windowed {
         cortex_core::window::WindowMode::Windowed
     } else {
         cortex_core::window::WindowMode::Terminal
     };
     
     // If windowed mode is requested and supported, launch in window
+    // This must be handled specially on macOS to run on main thread
     if window_mode != cortex_core::window::WindowMode::Terminal {
-        return run_windowed_app(args.path, window_mode).await;
+        // For macOS, we need to run the event loop on the main thread
+        #[cfg(target_os = "macos")]
+        {
+            return run_windowed_app_sync(args.path, window_mode);
+        }
+        
+        #[cfg(not(target_os = "macos"))]
+        {
+            let runtime = tokio::runtime::Runtime::new()?;
+            return runtime.block_on(run_windowed_app(args.path, window_mode));
+        }
     }
+    
+    // Run the terminal app with tokio runtime
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async_main(args))
+}
 
+async fn async_main(args: Args) -> Result<()> {
     // Handle update checking
     if args.check_updates {
         use update::UpdateManager;
@@ -145,6 +162,33 @@ async fn main() -> Result<()> {
     app.run().await
 }
 
+#[cfg(target_os = "macos")]
+fn run_windowed_app_sync(_initial_path: Option<PathBuf>, mode: WindowMode) -> Result<()> {
+    use cortex_core::window::{WindowManager, WindowConfig};
+    
+    println!("Starting Cortex in windowed mode (macOS)...");
+    
+    // Create window configuration
+    let config = WindowConfig {
+        title: format!("Cortex File Manager v{}", env!("CARGO_PKG_VERSION")),
+        width: 1280,
+        height: 800,
+        mode,
+        resizable: true,
+        decorations: true,
+    };
+    
+    // Create window manager on main thread for macOS
+    let mut manager = WindowManager::new(config.clone());
+    let _window = manager.create_window()?;
+    
+    // This will block on the main thread, which is required for macOS
+    manager.run_event_loop()?;
+    
+    Ok(())
+}
+
+#[allow(dead_code)]
 async fn run_windowed_app(initial_path: Option<PathBuf>, mode: WindowMode) -> Result<()> {
     use cortex_core::terminal::TerminalManager;
     use std::sync::Arc;
@@ -223,6 +267,7 @@ async fn run_windowed_app(initial_path: Option<PathBuf>, mode: WindowMode) -> Re
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum AppEvent {
     KeyPress(char),
@@ -230,6 +275,7 @@ enum AppEvent {
     MouseClick(f64, f64, MouseButton),
 }
 
+#[allow(dead_code)]
 fn handle_app_event(state: &mut AppState, event: AppEvent) -> Result<()> {
     match event {
         AppEvent::KeyPress(ch) => {
@@ -274,6 +320,7 @@ fn handle_app_event(state: &mut AppState, event: AppEvent) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn render_windowed_ui(renderer: &mut TerminalRenderer, state: &AppState) -> Result<()> {
     // Create simple text representation of the UI
     let mut lines = Vec::new();
@@ -837,104 +884,7 @@ impl App {
                 self.state.selected_suggestion = None;
             }
 
-            // Function keys
-            (KeyCode::F(1), _) => {
-                self.dialog = Some(Dialog::Help(HelpDialog::new()));
-            }
-            (KeyCode::F(3), _) => {
-                // View file
-                if let Some(entry) = self.state.active_panel().current_entry() {
-                    if entry.file_type == FileType::File {
-                        match FileViewer::new(&entry.path) {
-                            Ok(mut viewer) => {
-                                let height =
-                                    self.terminal.size().unwrap_or_default().height as usize;
-                                let _ = viewer.load_content(height - 8); // Leave space for UI chrome
-                                self.dialog = Some(Dialog::Viewer(ViewerDialog::new(viewer)));
-                            }
-                            Err(e) => {
-                                self.dialog = Some(Dialog::Error(ErrorDialog::new(format!(
-                                    "Cannot view file: {}",
-                                    e
-                                ))));
-                            }
-                        }
-                    }
-                }
-            }
-            (KeyCode::F(4), _) => {
-                // Edit file
-                if let Some(entry) = self.state.active_panel().current_entry() {
-                    if entry.file_type == FileType::File {
-                        match TextEditor::new(&entry.path) {
-                            Ok(editor) => {
-                                self.dialog = Some(Dialog::Editor(EditorDialog::new(editor)));
-                            }
-                            Err(e) => {
-                                self.dialog = Some(Dialog::Error(ErrorDialog::new(format!(
-                                    "Cannot edit file: {}",
-                                    e
-                                ))));
-                            }
-                        }
-                    }
-                }
-            }
-            (KeyCode::F(5), _) => {
-                if let Some(operation) = OperationManager::prepare_copy(&self.state).await {
-                    self.state.pending_operation = Some(operation.clone());
-                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
-                }
-            }
-            (KeyCode::F(6), _) => {
-                if let Some(operation) = OperationManager::prepare_move(&self.state).await {
-                    self.state.pending_operation = Some(operation.clone());
-                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
-                }
-            }
-            (KeyCode::F(7), _) => {
-                self.dialog = Some(Dialog::Input(InputDialog::new(
-                    "Create Directory",
-                    "Enter directory name:",
-                )));
-                self.state.pending_operation = Some(FileOperation::CreateDir {
-                    path: PathBuf::new(),
-                });
-            }
-            (KeyCode::F(8), _) => {
-                if let Some(operation) = OperationManager::prepare_delete(&self.state).await {
-                    self.state.pending_operation = Some(operation.clone());
-                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
-                }
-            }
-            (KeyCode::F(9), _) => {
-                // Cycle through themes
-                self.state.theme_manager.next_theme();
-                let theme = self.state.theme_manager.get_current_theme();
-                Self::set_terminal_background(&mut self.terminal, theme)?;
-                self.terminal.clear()?;
-                self.state
-                    .set_status_message(format!("Theme changed to: {:?}", theme.mode));
-            }
-            (KeyCode::F(10), _) => {
-                // Open theme selector or toggle random mode
-                if self.state.theme_manager.get_current_theme().mode
-                    == cortex_core::ThemeMode::Random
-                {
-                    self.state
-                        .theme_manager
-                        .set_theme(cortex_core::ThemeMode::Dark);
-                    self.state
-                        .set_status_message("Random theme rotation disabled");
-                } else {
-                    self.state
-                        .theme_manager
-                        .set_theme(cortex_core::ThemeMode::Random);
-                    self.state.set_status_message(
-                        "Random theme rotation enabled (changes every 10 minutes)",
-                    );
-                }
-            }
+            // Function keys removed - use command mode or keyboard shortcuts instead
 
             // Delete key - move to trash by default
             (KeyCode::Delete, KeyModifiers::NONE) => {
@@ -1010,6 +960,11 @@ impl App {
                     }
                 }
             }
+            (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
+                // Open API key configuration
+                self.state.set_status_message("Opening API key configuration...");
+                self.dialog = Some(Dialog::APIKey(cortex_tui::APIKeyDialog::new()));
+            }
             (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
                 if !self.state.command_line.is_empty() {
                     // Clear command line
@@ -1047,7 +1002,7 @@ impl App {
                 }
             }
             (KeyCode::Char('7'), KeyModifiers::ALT) => {
-                // Advanced search (Alt+F7)
+                // Advanced search
                 self.dialog = Some(Dialog::Search(SearchDialog::new()));
             }
 
@@ -1254,9 +1209,6 @@ impl App {
                 // Use exit code 130 to signal intentional exit to dev.sh
                 std::process::exit(130);
             }
-            "help" | "?" => {
-                self.dialog = Some(Dialog::Help(HelpDialog::new()));
-            }
             "restart" => {
                 // Stop file monitoring first
                 if let Some(ref monitor) = self.state.file_monitor.take() {
@@ -1367,6 +1319,10 @@ impl App {
                 self.state.set_status_message("Opening AI chat...");
                 self.dialog = Some(Dialog::AIChat(cortex_tui::AIChatDialog::new()));
             }
+            "ai-key" | "api-key" => {
+                self.state.set_status_message("Opening API key configuration...");
+                self.dialog = Some(Dialog::APIKey(cortex_tui::APIKeyDialog::new()));
+            }
             "ai-organize" => {
                 self.state.set_status_message("Opening AI chat for file organization...");
                 let mut dialog = cortex_tui::AIChatDialog::new();
@@ -1377,77 +1333,6 @@ impl App {
                     timestamp: chrono::Local::now(),
                 });
                 self.dialog = Some(Dialog::AIChat(dialog));
-            }
-            "view" => {
-                if let Some(entry) = self.state.active_panel().current_entry() {
-                    if entry.file_type == FileType::File {
-                        match FileViewer::new(&entry.path) {
-                            Ok(mut viewer) => {
-                                let height =
-                                    self.terminal.size().unwrap_or_default().height as usize;
-                                let _ = viewer.load_content(height - 8);
-                                self.dialog = Some(Dialog::Viewer(ViewerDialog::new(viewer)));
-                            }
-                            Err(e) => {
-                                self.state.set_status_message(format!("Cannot view: {}", e));
-                            }
-                        }
-                    }
-                }
-            }
-            "edit" => {
-                if let Some(entry) = self.state.active_panel().current_entry() {
-                    if entry.file_type == FileType::File {
-                        match TextEditor::new(&entry.path) {
-                            Ok(editor) => {
-                                self.dialog = Some(Dialog::Editor(EditorDialog::new(editor)));
-                            }
-                            Err(e) => {
-                                self.state.set_status_message(format!("Cannot edit: {}", e));
-                            }
-                        }
-                    }
-                }
-            }
-            "copy" => {
-                if let Some(operation) = OperationManager::prepare_copy(&self.state).await {
-                    self.state.pending_operation = Some(operation.clone());
-                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
-                }
-            }
-            "move" => {
-                if let Some(operation) = OperationManager::prepare_move(&self.state).await {
-                    self.state.pending_operation = Some(operation.clone());
-                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
-                }
-            }
-            "delete" => {
-                if let Some(operation) = OperationManager::prepare_delete(&self.state).await {
-                    self.state.pending_operation = Some(operation.clone());
-                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
-                }
-            }
-            "mkdir" => {
-                self.dialog = Some(Dialog::Input(InputDialog::new(
-                    "Create Directory",
-                    "Enter directory name:",
-                )));
-                self.state.pending_operation = Some(FileOperation::CreateDir {
-                    path: PathBuf::new(),
-                });
-            }
-            "rename" => {
-                if let Some(entry) = self.state.active_panel().current_entry() {
-                    if entry.name != ".." {
-                        self.dialog = Some(Dialog::Input(
-                            InputDialog::new("Rename", "Enter new name:").with_value(&entry.name),
-                        ));
-                        self.state.pending_operation = Some(FileOperation::Rename {
-                            old_path: entry.path.clone(),
-                            new_name: entry.name.clone(),
-                        });
-                    }
-                }
             }
             "hidden" => {
                 let panel = self.state.active_panel_mut();
@@ -1587,7 +1472,7 @@ impl App {
             Some(Dialog::Help(dialog)) => match key.code {
                 KeyCode::Up => dialog.scroll_up(),
                 KeyCode::Down => dialog.scroll_down(),
-                KeyCode::Esc | KeyCode::F(1) => {
+                KeyCode::Esc => {
                     self.dialog = None;
                 }
                 _ => {}
@@ -1641,7 +1526,7 @@ impl App {
                 } else {
                     // Normal editor controls
                     match (key.code, key.modifiers) {
-                        (KeyCode::Esc, _) | (KeyCode::F(4), _) => {
+                        (KeyCode::Esc, _) => {
                             if dialog.editor.modified {
                                 // Show save confirmation dialog
                                 let filename = dialog
@@ -1782,7 +1667,7 @@ impl App {
                         KeyCode::Char('f') | KeyCode::Char('F') | KeyCode::Char('n') => {
                             dialog.viewer.search_next();
                         }
-                        KeyCode::Esc | KeyCode::F(3) | KeyCode::Char('q') => {
+                        KeyCode::Esc | KeyCode::Char('q') => {
                             self.dialog = None;
                         }
                         _ => {}
@@ -1960,10 +1845,6 @@ impl App {
                                     }
                                 }
                                 self.dialog = None;
-                            }
-                            KeyCode::F(7) => {
-                                // New search
-                                self.dialog = Some(Dialog::Search(SearchDialog::new()));
                             }
                             KeyCode::Esc => {
                                 self.dialog = None;
@@ -2384,6 +2265,68 @@ impl App {
                     }
                     KeyCode::Esc => {
                         self.dialog = None;
+                    }
+                    _ => {}
+                }
+            },
+            Some(Dialog::APIKey(dialog)) => {
+                match key.code {
+                    KeyCode::Tab if !dialog.input_mode => {
+                        dialog.toggle_dropdown();
+                    }
+                    KeyCode::Enter => {
+                        if dialog.input_mode {
+                            // Save the API key
+                            if !dialog.api_key.is_empty() {
+                                let _ = self.state.config_manager.set_api_key(
+                                    dialog.selected_provider.as_str(),
+                                    dialog.api_key.clone()
+                                );
+                                self.state.set_status_message(format!(
+                                    "API key saved for {}",
+                                    dialog.selected_provider.as_str()
+                                ));
+                                
+                                // Reinitialize AI manager with new config
+                                let config = self.state.config_manager.get();
+                                self.state.ai_manager = Some(std::sync::Arc::new(cortex_core::ai::AIManager::new(config.ai)));
+                                self.dialog = None;
+                            }
+                        } else if dialog.provider_dropdown_open {
+                            dialog.toggle_dropdown();
+                        } else {
+                            dialog.toggle_input_mode();
+                        }
+                    }
+                    KeyCode::Up if dialog.provider_dropdown_open => {
+                        dialog.prev_provider();
+                    }
+                    KeyCode::Down if dialog.provider_dropdown_open => {
+                        dialog.next_provider();
+                    }
+                    KeyCode::Char(c) if dialog.input_mode => {
+                        dialog.add_char(c);
+                    }
+                    KeyCode::Backspace if dialog.input_mode => {
+                        dialog.delete_char();
+                    }
+                    KeyCode::Left if dialog.input_mode => {
+                        dialog.move_cursor_left();
+                    }
+                    KeyCode::Right if dialog.input_mode => {
+                        dialog.move_cursor_right();
+                    }
+                    KeyCode::Tab if dialog.input_mode => {
+                        dialog.toggle_show_key();
+                    }
+                    KeyCode::Esc => {
+                        if dialog.input_mode {
+                            dialog.toggle_input_mode();
+                        } else if dialog.provider_dropdown_open {
+                            dialog.toggle_dropdown();
+                        } else {
+                            self.dialog = None;
+                        }
                     }
                     _ => {}
                 }
@@ -2959,7 +2902,7 @@ impl App {
     async fn execute_context_menu_action(&mut self, action: ContextMenuAction) -> Result<()> {
         match action {
             ContextMenuAction::Copy => {
-                // Prepare copy operation (F5 functionality)
+                // Prepare copy operation
                 let sources = self.get_selected_files();
                 if !sources.is_empty() {
                     let destination = self.state.inactive_panel().current_dir.clone();

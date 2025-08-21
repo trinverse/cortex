@@ -186,6 +186,8 @@ pub struct CloudConfig {
     pub openai_api_key: Option<String>,
     #[serde(default)]
     pub anthropic_api_key: Option<String>,
+    #[serde(default)]
+    pub gemini_api_key: Option<String>,
     #[serde(default = "default_cloud_model")]
     pub default_model: String,
     #[serde(default = "default_max_monthly_cost")]
@@ -210,6 +212,7 @@ impl Default for CloudConfig {
             groq_api_key: None,
             openai_api_key: None,
             anthropic_api_key: None,
+            gemini_api_key: None,
             default_model: default_cloud_model(),
             max_monthly_cost: default_max_monthly_cost(),
         }
@@ -410,6 +413,29 @@ impl ConfigManager {
         let contents = toml::to_string_pretty(&*write_guard)?;
         fs::write(&self.config_path, contents)?;
         Ok(())
+    }
+
+    pub fn set_api_key(&self, provider: &str, api_key: String) -> Result<()> {
+        self.update(|config| {
+            match provider {
+                "groq" | "Groq" => config.ai.cloud.groq_api_key = Some(api_key),
+                "openai" | "OpenAI" => config.ai.cloud.openai_api_key = Some(api_key),
+                "anthropic" | "Anthropic" => config.ai.cloud.anthropic_api_key = Some(api_key),
+                "gemini" | "Gemini" => config.ai.cloud.gemini_api_key = Some(api_key),
+                _ => {}
+            }
+        })
+    }
+
+    pub fn get_api_key(&self, provider: &str) -> Option<String> {
+        let config = self.get();
+        match provider {
+            "groq" | "Groq" => config.ai.cloud.groq_api_key,
+            "openai" | "OpenAI" => config.ai.cloud.openai_api_key,
+            "anthropic" | "Anthropic" => config.ai.cloud.anthropic_api_key,
+            "gemini" | "Gemini" => config.ai.cloud.gemini_api_key,
+            _ => None
+        }
     }
 
     pub fn watch_for_changes(&self) -> Result<()> {
