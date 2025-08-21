@@ -1,24 +1,24 @@
 class CortexFm < Formula
   desc "Modern terminal file manager with dual-pane interface"
   homepage "https://github.com/trinverse/cortex"
-  version "0.2.0"
+  version "0.1.1"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/trinverse/cortex/releases/download/v0.2.0/cortex-v0.2.0-aarch64-apple-darwin.tar.gz"
-      sha256 "399c52146dc2fc94541d5c45369797e9569bfced23bfce1bd4bf009fcc767a96"
+      url "https://github.com/trinverse/cortex/releases/download/v0.1.1/cortex-v0.1.1-aarch64-apple-darwin.tar.gz"
+      sha256 "547a52208cb28227c9c637af94c59479549b5d2f60c8bdb6c092a70fb9248f10"
     else
       # Intel Mac builds from source for now
-      url "https://github.com/trinverse/cortex/archive/refs/tags/v0.2.0.tar.gz"
-      sha256 "f52e7fd8f76dc74a2c43dd73a5b4903e339c75b002e94a172902f63199450f9f"
+      url "https://github.com/trinverse/cortex/archive/refs/tags/v0.1.1.tar.gz"
+      sha256 "261670c84b86036da1134357d47506934a87cc9fa4fe4974fc955180e9a82f75"
       depends_on "rust" => :build
     end
   end
 
   on_linux do
-    url "https://github.com/trinverse/cortex/archive/refs/tags/v0.2.0.tar.gz"
-    sha256 "f52e7fd8f76dc74a2c43dd73a5b4903e339c75b002e94a172902f63199450f9f"
+    url "https://github.com/trinverse/cortex/archive/refs/tags/v0.1.1.tar.gz"
+    sha256 "PENDING_SOURCE_SHA256"  # Will be calculated when tag is pushed
     depends_on "rust" => :build
   end
   
@@ -34,6 +34,6 @@ class CortexFm < Formula
   end
   
   test do
-    assert_match "0.2.0", shell_output("#{bin}/cortex-fm --version")
+    assert_match "0.1.1", shell_output("#{bin}/cortex-fm --version")
   end
 end
