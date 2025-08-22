@@ -28,7 +28,7 @@ All documentation is organized in the [`docs/`](./docs/) directory:
 ```bash
 # Add the tap and install
 brew tap trinverse/cortex
-brew install cortex-fm-binary
+brew install cortex-fm
 
 # Start the file manager
 cortex-fm
@@ -40,7 +40,7 @@ cortex-fm
 ```bash
 # Option 1: Install via Homebrew (recommended)
 brew tap trinverse/cortex
-brew install cortex-fm-binary
+brew install cortex-fm
 
 # Option 2: Download .deb package (coming soon)
 wget https://github.com/trinverse/cortex/releases/download/v0.1.0/cortex_0.1.0_amd64.deb
