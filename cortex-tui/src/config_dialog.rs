@@ -12,6 +12,8 @@ pub enum ConfigTab {
     General,
     Panels,
     Colors,
+    Themes,
+    AI,
     Plugins,
     Network,
     Keybindings,
@@ -23,6 +25,8 @@ impl ConfigTab {
             Self::General,
             Self::Panels,
             Self::Colors,
+            Self::Themes,
+            Self::AI,
             Self::Plugins,
             Self::Network,
             Self::Keybindings,
@@ -34,6 +38,8 @@ impl ConfigTab {
             Self::General => "General",
             Self::Panels => "Panels",
             Self::Colors => "Colors",
+            Self::Themes => "Themes",
+            Self::AI => "AI",
             Self::Plugins => "Plugins",
             Self::Network => "Network",
             Self::Keybindings => "Keys",
@@ -49,6 +55,11 @@ pub struct ConfigDialog {
     pub editing: bool,
     pub edit_value: String,
     pub edit_cursor: usize,
+    pub available_themes: Vec<(String, String)>, // (id, name) pairs
+    pub current_theme: String,
+    pub ai_api_key: String,
+    pub ai_provider: String,
+    pub available_providers: Vec<String>,
 }
 
 impl ConfigDialog {
@@ -60,6 +71,22 @@ impl ConfigDialog {
             editing: false,
             edit_value: String::new(),
             edit_cursor: 0,
+            available_themes: vec![
+                ("default".to_string(), "Default".to_string()),
+                ("dark".to_string(), "Dark".to_string()),
+                ("light".to_string(), "Light".to_string()),
+                ("nord".to_string(), "Nord".to_string()),
+                ("solarized".to_string(), "Solarized".to_string()),
+            ],
+            current_theme: "default".to_string(),
+            ai_api_key: String::new(),
+            ai_provider: "groq".to_string(),
+            available_providers: vec![
+                "groq".to_string(),
+                "openai".to_string(),
+                "claude".to_string(),
+                "ollama".to_string(),
+            ],
         }
     }
 
@@ -109,6 +136,8 @@ impl ConfigDialog {
             ConfigTab::General => 8,
             ConfigTab::Panels => 4,
             ConfigTab::Colors => 4,
+            ConfigTab::Themes => 1,
+            ConfigTab::AI => 2,
             ConfigTab::Plugins => 4,
             ConfigTab::Network => 5,
             ConfigTab::Keybindings => 1,
@@ -182,6 +211,15 @@ impl ConfigDialog {
                 4 => self.config.network.known_hosts.join(","),
                 _ => String::new(),
             },
+            ConfigTab::Themes => match self.selected_index {
+                0 => self.current_theme.clone(),
+                _ => String::new(),
+            },
+            ConfigTab::AI => match self.selected_index {
+                0 => self.ai_provider.clone(),
+                1 => self.ai_api_key.clone(),
+                _ => String::new(),
+            },
             ConfigTab::Keybindings => "Custom keybindings (not yet editable)".to_string(),
         }
     }
@@ -232,6 +270,15 @@ impl ConfigDialog {
                         .filter(|s| !s.is_empty())
                         .collect()
                 }
+                _ => {}
+            },
+            ConfigTab::Themes => match self.selected_index {
+                0 => self.current_theme = value.to_string(),
+                _ => {}
+            },
+            ConfigTab::AI => match self.selected_index {
+                0 => self.ai_provider = value.to_string(),
+                1 => self.ai_api_key = value.to_string(),
                 _ => {}
             },
             ConfigTab::Keybindings => {}
@@ -492,10 +539,82 @@ impl ConfigDialog {
                     self.config.network.known_hosts.join(", "),
                 ),
             ],
+            ConfigTab::Themes => vec![
+                (
+                    "Current Theme".to_string(),
+                    self.current_theme.clone(),
+                ),
+            ],
+            ConfigTab::AI => vec![
+                (
+                    "AI Provider".to_string(),
+                    self.ai_provider.clone(),
+                ),
+                (
+                    "API Key".to_string(),
+                    if self.ai_api_key.is_empty() { 
+                        "Not set".to_string() 
+                    } else { 
+                        "*".repeat(self.ai_api_key.len().min(8)) 
+                    },
+                ),
+            ],
             ConfigTab::Keybindings => vec![(
                 "Custom Keybindings".to_string(),
                 format!("{} defined", self.config.keybindings.custom.len()),
             )],
+        }
+    }
+
+    pub fn cycle_theme_forward(&mut self) {
+        let current_idx = self.available_themes
+            .iter()
+            .position(|(id, _)| id == &self.current_theme)
+            .unwrap_or(0);
+        let next_idx = (current_idx + 1) % self.available_themes.len();
+        self.current_theme = self.available_themes[next_idx].0.clone();
+    }
+
+    pub fn cycle_theme_backward(&mut self) {
+        let current_idx = self.available_themes
+            .iter()
+            .position(|(id, _)| id == &self.current_theme)
+            .unwrap_or(0);
+        let prev_idx = if current_idx == 0 {
+            self.available_themes.len() - 1
+        } else {
+            current_idx - 1
+        };
+        self.current_theme = self.available_themes[prev_idx].0.clone();
+    }
+
+    pub fn cycle_provider_forward(&mut self) {
+        let current_idx = self.available_providers
+            .iter()
+            .position(|p| p == &self.ai_provider)
+            .unwrap_or(0);
+        let next_idx = (current_idx + 1) % self.available_providers.len();
+        self.ai_provider = self.available_providers[next_idx].clone();
+    }
+
+    pub fn cycle_provider_backward(&mut self) {
+        let current_idx = self.available_providers
+            .iter()
+            .position(|p| p == &self.ai_provider)
+            .unwrap_or(0);
+        let prev_idx = if current_idx == 0 {
+            self.available_providers.len() - 1
+        } else {
+            current_idx - 1
+        };
+        self.ai_provider = self.available_providers[prev_idx].clone();
+    }
+
+    pub fn is_dropdown_field(&self) -> bool {
+        match self.current_tab {
+            ConfigTab::Themes => self.selected_index == 0,
+            ConfigTab::AI => self.selected_index == 0,
+            _ => false,
         }
     }
 }
