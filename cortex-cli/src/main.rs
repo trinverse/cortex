@@ -7,7 +7,7 @@ use cortex_core::{
 };
 use cortex_plugins::Plugin;
 use cortex_tui::{
-    CommandPaletteDialog, ConfigDialog, ConnectionDialog, ConnectionType, ContextMenu,
+    CommandPaletteDialog, ConfigDialog, ConfigTab, ConnectionDialog, ConnectionType, ContextMenu,
     ContextMenuAction, Dialog, EditorDialog, ErrorDialog, Event, EventHandler, FileViewer,
     FilterDialog, InputDialog, MouseAction, MouseHandler, MouseRegionManager,
     NotificationManager, NotificationType, PluginDialog, Position, ProgressDialog, SaveChoice,
@@ -884,7 +884,85 @@ impl App {
                 self.state.selected_suggestion = None;
             }
 
-            // Function keys removed - use command mode or keyboard shortcuts instead
+            // Function keys
+            (KeyCode::F(1), _) => {
+                // F1 - Help
+                self.dialog = Some(Dialog::Input(
+                    InputDialog::new("Help", "F3=View F4=Edit F5=Copy(w/progress) F6=Move(w/progress) F7=MkDir F8=Delete F9=Config F10=Quit. Press Esc to close.")
+                        .with_value("")
+                ));
+            }
+            (KeyCode::F(3), _) => {
+                // F3 - View file
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if entry.file_type == FileType::File {
+                        match FileViewer::new(&entry.path) {
+                            Ok(mut viewer) => {
+                                // Load content with reasonable line limit for terminal height
+                                let terminal_height = self.terminal.size().unwrap_or_default().height as usize;
+                                let max_lines = terminal_height.saturating_sub(10); // Reserve space for UI
+                                if let Err(e) = viewer.load_content(max_lines.max(50)) {
+                                    self.state.set_status_message(&format!("Failed to load file content: {}", e));
+                                } else {
+                                    self.dialog = Some(Dialog::Viewer(ViewerDialog::new(viewer)));
+                                }
+                            }
+                            Err(e) => {
+                                self.state.set_status_message(&format!("Failed to open file: {}", e));
+                            }
+                        }
+                    }
+                }
+            }
+            (KeyCode::F(4), _) => {
+                // F4 - Edit file
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if entry.file_type == FileType::File {
+                        match TextEditor::new(&entry.path) {
+                            Ok(editor) => {
+                                self.dialog = Some(Dialog::Editor(EditorDialog::new(editor)));
+                            }
+                            Err(e) => {
+                                self.state.set_status_message(&format!("Failed to open file: {}", e));
+                            }
+                        }
+                    }
+                }
+            }
+            (KeyCode::F(5), _) => {
+                // F5 - Copy files with progress bar
+                if let Some(operation) = OperationManager::prepare_copy(&self.state).await {
+                    self.execute_operation(operation).await?;
+                }
+            }
+            (KeyCode::F(6), _) => {
+                // F6 - Move files with progress bar
+                if let Some(operation) = OperationManager::prepare_move(&self.state).await {
+                    self.execute_operation(operation).await?;
+                }
+            }
+            (KeyCode::F(7), _) => {
+                // F7 - Create directory
+                self.dialog = Some(Dialog::Input(
+                    InputDialog::new("Create Directory", "Enter directory name:")
+                ));
+            }
+            (KeyCode::F(8), _) => {
+                // F8 - Delete files
+                if let Some(operation) = OperationManager::prepare_delete(&self.state).await {
+                    self.state.pending_operation = Some(operation.clone());
+                    self.dialog = Some(OperationManager::create_confirm_dialog(&operation));
+                }
+            }
+            (KeyCode::F(9), _) => {
+                // F9 - Configuration
+                let config = self.state.config_manager.get();
+                self.dialog = Some(Dialog::Config(ConfigDialog::new(config)));
+            }
+            (KeyCode::F(10), _) => {
+                // F10 - Quit
+                return Ok(true);
+            }
 
             // Delete key - move to trash by default
             (KeyCode::Delete, KeyModifiers::NONE) => {
@@ -2053,13 +2131,40 @@ impl App {
                             dialog.move_selection_down();
                         }
                         KeyCode::Left => {
-                            dialog.prev_tab();
+                            if dialog.is_dropdown_field() {
+                                // Left arrow cycles dropdown backward
+                                match dialog.current_tab {
+                                    ConfigTab::Themes => dialog.cycle_theme_backward(),
+                                    ConfigTab::AI if dialog.selected_index == 0 => dialog.cycle_provider_backward(),
+                                    _ => {}
+                                }
+                            } else {
+                                dialog.prev_tab();
+                            }
                         }
                         KeyCode::Right => {
-                            dialog.next_tab();
+                            if dialog.is_dropdown_field() {
+                                // Right arrow cycles dropdown forward
+                                match dialog.current_tab {
+                                    ConfigTab::Themes => dialog.cycle_theme_forward(),
+                                    ConfigTab::AI if dialog.selected_index == 0 => dialog.cycle_provider_forward(),
+                                    _ => {}
+                                }
+                            } else {
+                                dialog.next_tab();
+                            }
                         }
                         KeyCode::Enter => {
-                            dialog.start_edit();
+                            if dialog.is_dropdown_field() {
+                                // Enter cycles dropdown forward for dropdown fields
+                                match dialog.current_tab {
+                                    ConfigTab::Themes => dialog.cycle_theme_forward(),
+                                    ConfigTab::AI if dialog.selected_index == 0 => dialog.cycle_provider_forward(),
+                                    _ => {}
+                                }
+                            } else {
+                                dialog.start_edit();
+                            }
                         }
                         KeyCode::Char('s') | KeyCode::Char('S') => {
                             // Save configuration
@@ -2359,21 +2464,45 @@ impl App {
         let (tx, rx) = mpsc::unbounded_channel();
         self.operation_rx = Some(rx);
 
-        let title = match &operation {
-            FileOperation::Copy { .. } => "Copying Files",
-            FileOperation::Move { .. } => "Moving Files",
-            FileOperation::Delete { .. } => "Deleting Files",
-            FileOperation::DeleteToTrash { .. } => "Moving to Trash",
-            FileOperation::RestoreFromTrash { .. } => "Restoring from Trash",
-            FileOperation::CreateDir { .. } => "Creating Directory",
-            FileOperation::Rename { .. } => "Renaming",
-            FileOperation::CopyToClipboard { .. } => "Copying to Clipboard",
-            FileOperation::PasteFromClipboard { .. } => "Pasting from Clipboard",
+        let (title, initial_message) = match &operation {
+            FileOperation::Copy { sources, destination } => {
+                let count = sources.len();
+                let dest_name = destination.file_name().and_then(|n| n.to_str()).unwrap_or("destination");
+                ("Copying Files", format!("Copying {} file(s) to {}...", count, dest_name))
+            },
+            FileOperation::Move { sources, destination } => {
+                let count = sources.len();
+                let dest_name = destination.file_name().and_then(|n| n.to_str()).unwrap_or("destination");
+                ("Moving Files", format!("Moving {} file(s) to {}...", count, dest_name))
+            },
+            FileOperation::Delete { targets } => {
+                ("Deleting Files", format!("Deleting {} file(s)...", targets.len()))
+            },
+            FileOperation::DeleteToTrash { targets } => {
+                ("Moving to Trash", format!("Moving {} file(s) to trash...", targets.len()))
+            },
+            FileOperation::RestoreFromTrash { targets } => {
+                ("Restoring from Trash", format!("Restoring {} file(s) from trash...", targets.len()))
+            },
+            FileOperation::CreateDir { path } => {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("directory");
+                ("Creating Directory", format!("Creating directory '{}'...", name))
+            },
+            FileOperation::Rename { old_path, new_name } => {
+                let old_name = old_path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+                ("Renaming", format!("Renaming '{}' to '{}'...", old_name, new_name))
+            },
+            FileOperation::CopyToClipboard { paths } => {
+                ("Copying to Clipboard", format!("Copying {} file(s) to clipboard...", paths.len()))
+            },
+            FileOperation::PasteFromClipboard { .. } => {
+                ("Pasting from Clipboard", "Pasting clipboard contents...".to_string())
+            },
         };
 
         self.dialog = Some(Dialog::Progress(ProgressDialog::new(
             title,
-            "Processing...",
+            initial_message,
         )));
 
         let result = self
