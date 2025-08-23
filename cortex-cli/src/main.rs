@@ -576,6 +576,11 @@ impl App {
 
             match self.events.next().await? {
                 Event::Key(key_event) => {
+                    // Debug logging for F10 key detection
+                    if matches!(key_event.code, KeyCode::F(10)) {
+                        eprintln!("DEBUG: F10 key event received! Modifiers: {:?}", key_event.modifiers);
+                    }
+                    
                     if self.context_menu.is_some() {
                         self.handle_context_menu_input(key_event).await?;
                     } else if matches!(self.dialog, Some(Dialog::Suggestions(_))) {
@@ -671,6 +676,23 @@ impl App {
                 }
                 // F10 quits the application even when suggestions dialog is open
                 KeyCode::F(10) => {
+                    eprintln!("DEBUG: F10 quit triggered from suggestions dialog!");
+                    
+                    // Stop file monitoring first to prevent loops
+                    if let Some(ref monitor) = self.state.file_monitor.take() {
+                        let _ = monitor.stop().await;
+                    }
+                    // Stop cache refresher if running
+                    if let Some(ref refresher) = self.state.cache_refresher.take() {
+                        refresher.stop();
+                    }
+                    // Cleanup terminal and exit
+                    disable_raw_mode()?;
+                    execute!(
+                        self.terminal.backend_mut(),
+                        LeaveAlternateScreen,
+                        DisableMouseCapture
+                    )?;
                     return Ok(false); // Exit the application
                 }
                 // All other keys (including Tab) fall through to normal processing
@@ -892,7 +914,7 @@ impl App {
             (KeyCode::F(1), _) => {
                 // F1 - Help
                 self.dialog = Some(Dialog::Input(
-                    InputDialog::new("Help", "F3=View F4=Edit F5=Copy(w/progress) F6=Move(w/progress) F7=MkDir F8=Delete F9=Config F10=Quit(global). Press Esc to close.")
+                    InputDialog::new("Help", "F3=View F4=Edit F5=Copy F6=Move F7=MkDir F8=Delete F9=Config. Quit: F10, Ctrl+Q, Ctrl+Shift+Q, Alt+F4. Press Esc to close.")
                         .with_value("")
                 ));
             }
@@ -918,7 +940,28 @@ impl App {
                     }
                 }
             }
-            (KeyCode::F(4), _) => {
+            (KeyCode::F(4), KeyModifiers::ALT) => {
+                // Alt+F4 - Windows-style quit (must come before F4 pattern)
+                eprintln!("DEBUG: Alt+F4 quit triggered!");
+                
+                // Stop file monitoring first to prevent loops
+                if let Some(ref monitor) = self.state.file_monitor.take() {
+                    let _ = monitor.stop().await;
+                }
+                // Stop cache refresher if running
+                if let Some(ref refresher) = self.state.cache_refresher.take() {
+                    refresher.stop();
+                }
+                // Cleanup terminal and exit
+                disable_raw_mode()?;
+                execute!(
+                    self.terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                return Ok(true);
+            }
+            (KeyCode::F(4), KeyModifiers::NONE) => {
                 // F4 - Edit file
                 if let Some(entry) = self.state.active_panel().current_entry() {
                     if entry.file_type == FileType::File {
@@ -964,7 +1007,24 @@ impl App {
                 self.dialog = Some(Dialog::Config(ConfigDialog::new(config)));
             }
             (KeyCode::F(10), _) => {
-                // F10 - Quit
+                // F10 - Quit (same as Ctrl+Q)
+                eprintln!("DEBUG: F10 quit triggered from main handler!");
+                
+                // Stop file monitoring first to prevent loops
+                if let Some(ref monitor) = self.state.file_monitor.take() {
+                    let _ = monitor.stop().await;
+                }
+                // Stop cache refresher if running
+                if let Some(ref refresher) = self.state.cache_refresher.take() {
+                    refresher.stop();
+                }
+                // Cleanup terminal and exit
+                disable_raw_mode()?;
+                execute!(
+                    self.terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
                 return Ok(true);
             }
 
@@ -987,7 +1047,29 @@ impl App {
             }
 
             // Control keys
+            (KeyCode::Char('q'), mods) if mods.contains(KeyModifiers::CONTROL) && mods.contains(KeyModifiers::SHIFT) => {
+                // Ctrl+Shift+Q - Alternative quit method
+                eprintln!("DEBUG: Ctrl+Shift+Q quit triggered!");
+                
+                // Stop file monitoring first to prevent loops
+                if let Some(ref monitor) = self.state.file_monitor.take() {
+                    let _ = monitor.stop().await;
+                }
+                // Stop cache refresher if running
+                if let Some(ref refresher) = self.state.cache_refresher.take() {
+                    refresher.stop();
+                }
+                // Cleanup terminal and exit
+                disable_raw_mode()?;
+                execute!(
+                    self.terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                return Ok(true);
+            }
             (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
+                // Ctrl+Q - Standard quit method
                 // Stop file monitoring first to prevent loops
                 if let Some(ref monitor) = self.state.file_monitor.take() {
                     let _ = monitor.stop().await;
@@ -1479,8 +1561,30 @@ impl App {
     }
 
     async fn handle_dialog_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        // Debug logging for F10 key
+        if matches!(key.code, KeyCode::F(10)) {
+            eprintln!("DEBUG: F10 key detected in handle_dialog_input!");
+        }
+        
         // Global F10 key handling - quit application even when dialogs are open
         if key.code == KeyCode::F(10) {
+            eprintln!("DEBUG: F10 quit triggered from dialog!");
+            
+            // Stop file monitoring first to prevent loops
+            if let Some(ref monitor) = self.state.file_monitor.take() {
+                let _ = monitor.stop().await;
+            }
+            // Stop cache refresher if running
+            if let Some(ref refresher) = self.state.cache_refresher.take() {
+                refresher.stop();
+            }
+            // Cleanup terminal and exit
+            disable_raw_mode()?;
+            execute!(
+                self.terminal.backend_mut(),
+                LeaveAlternateScreen,
+                DisableMouseCapture
+            )?;
             return Ok(false); // Exit the application
         }
         
