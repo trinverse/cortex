@@ -478,6 +478,28 @@ impl App {
         })
     }
 
+    /// Perform clean shutdown and exit the application
+    async fn quit_application(&mut self, debug_message: &str) -> ! {
+        eprintln!("DEBUG: {}", debug_message);
+        
+        // Stop file monitoring first to prevent loops
+        if let Some(ref monitor) = self.state.file_monitor.take() {
+            let _ = monitor.stop().await;
+        }
+        // Stop cache refresher if running
+        if let Some(ref refresher) = self.state.cache_refresher.take() {
+            refresher.stop();
+        }
+        // Cleanup terminal and exit
+        let _ = disable_raw_mode();
+        let _ = execute!(
+            self.terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        );
+        std::process::exit(0);
+    }
+
     async fn run(&mut self) -> Result<()> {
         loop {
             self.terminal.draw(|frame| {
@@ -693,7 +715,7 @@ impl App {
                         LeaveAlternateScreen,
                         DisableMouseCapture
                     )?;
-                    return Ok(false); // Exit the application
+                    std::process::exit(0);
                 }
                 // All other keys (including Tab) fall through to normal processing
                 _ => {
@@ -959,7 +981,7 @@ impl App {
                     LeaveAlternateScreen,
                     DisableMouseCapture
                 )?;
-                return Ok(true);
+                std::process::exit(0);
             }
             (KeyCode::F(4), KeyModifiers::NONE) => {
                 // F4 - Edit file
@@ -1025,7 +1047,7 @@ impl App {
                     LeaveAlternateScreen,
                     DisableMouseCapture
                 )?;
-                return Ok(true);
+                std::process::exit(0);
             }
 
             // Delete key - move to trash by default
@@ -1066,7 +1088,7 @@ impl App {
                     LeaveAlternateScreen,
                     DisableMouseCapture
                 )?;
-                return Ok(true);
+                std::process::exit(0);
             }
             (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
                 // Ctrl+Q - Standard quit method
@@ -1085,7 +1107,7 @@ impl App {
                     LeaveAlternateScreen,
                     DisableMouseCapture
                 )?;
-                return Ok(true);
+                std::process::exit(0);
             }
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 if self.state.command_line.is_empty() {
@@ -1585,7 +1607,7 @@ impl App {
                 LeaveAlternateScreen,
                 DisableMouseCapture
             )?;
-            return Ok(false); // Exit the application
+            std::process::exit(0);
         }
         
         match &mut self.dialog {
