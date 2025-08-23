@@ -669,6 +669,10 @@ impl App {
                     // This prevents the dialog from immediately reopening
                     return Ok(true); // Consume this key - don't process further
                 }
+                // F10 quits the application even when suggestions dialog is open
+                KeyCode::F(10) => {
+                    return Ok(false); // Exit the application
+                }
                 // All other keys (including Tab) fall through to normal processing
                 _ => {
                     // Don't close dialog - let typing continue with suggestions updating
@@ -888,7 +892,7 @@ impl App {
             (KeyCode::F(1), _) => {
                 // F1 - Help
                 self.dialog = Some(Dialog::Input(
-                    InputDialog::new("Help", "F3=View F4=Edit F5=Copy(w/progress) F6=Move(w/progress) F7=MkDir F8=Delete F9=Config F10=Quit. Press Esc to close.")
+                    InputDialog::new("Help", "F3=View F4=Edit F5=Copy(w/progress) F6=Move(w/progress) F7=MkDir F8=Delete F9=Config F10=Quit(global). Press Esc to close.")
                         .with_value("")
                 ));
             }
@@ -1475,6 +1479,11 @@ impl App {
     }
 
     async fn handle_dialog_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        // Global F10 key handling - quit application even when dialogs are open
+        if key.code == KeyCode::F(10) {
+            return Ok(false); // Exit the application
+        }
+        
         match &mut self.dialog {
             Some(Dialog::Confirm(dialog)) => match key.code {
                 KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
