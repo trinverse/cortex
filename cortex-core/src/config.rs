@@ -24,6 +24,8 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfig {
+    #[serde(default = "default_theme")]
+    pub theme: String,
     #[serde(default = "default_false")]
     pub show_hidden: bool,
     #[serde(default = "default_true")]
@@ -38,8 +40,6 @@ pub struct GeneralConfig {
     pub auto_reload: bool,
     #[serde(default = "default_true")]
     pub confirm_operations: bool,
-    #[serde(default = "default_false")]
-    pub enable_sound: bool,
     #[serde(default = "default_plugin_dir")]
     pub plugin_directory: String,
 }
@@ -222,6 +222,7 @@ impl Default for CloudConfig {
 impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
+            theme: default_theme(),
             show_hidden: false,
             confirm_delete: true,
             show_icons: false,
@@ -229,7 +230,6 @@ impl Default for GeneralConfig {
             editor: default_editor(),
             auto_reload: false,
             confirm_operations: true,
-            enable_sound: false,
             plugin_directory: default_plugin_dir(),
         }
     }
@@ -285,6 +285,9 @@ fn default_true() -> bool {
 }
 fn default_false() -> bool {
     false
+}
+fn default_theme() -> String {
+    "default".to_string()
 }
 fn default_terminal() -> String {
     "bash".to_string()
@@ -438,7 +441,7 @@ impl ConfigManager {
         }
     }
 
-    pub fn watch_for_changes(&self) -> Result<()> {
+    pub fn watch_for_changes(&self, tx_notify: std::sync::mpsc::Sender<()>) -> Result<()> {
         use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
         use std::sync::mpsc::channel;
         use std::time::Duration;
@@ -462,6 +465,8 @@ impl ConfigManager {
                 std::thread::sleep(Duration::from_millis(100)); // Debounce
                 if let Err(e) = manager.reload() {
                     eprintln!("Failed to reload config: {}", e);
+                } else {
+                    let _ = tx_notify.send(());
                 }
             }
         });

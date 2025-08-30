@@ -12,6 +12,33 @@ pub enum ThemeMode {
     Random,
 }
 
+impl ThemeMode {
+    pub fn name(&self) -> &'static str {
+        match self {
+            ThemeMode::Dark => "Dark",
+            ThemeMode::Light => "Light",
+            ThemeMode::Gruvbox => "Gruvbox",
+            ThemeMode::Nord => "Nord",
+            ThemeMode::Modern => "Modern",
+            ThemeMode::Random => "Random",
+        }
+    }
+}
+
+impl From<&str> for ThemeMode {
+    fn from(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "dark" => Self::Dark,
+            "light" => Self::Light,
+            "gruvbox" => Self::Gruvbox,
+            "nord" => Self::Nord,
+            "modern" => Self::Modern,
+            "random" => Self::Random,
+            _ => Self::Dark, // Default to Dark
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub mode: ThemeMode,
@@ -351,6 +378,10 @@ impl ThemeManager {
         &self.current_theme
     }
 
+    pub fn available_themes(&self) -> &Vec<Theme> {
+        &self.themes
+    }
+
     pub fn set_theme(&mut self, mode: ThemeMode) {
         self.current_theme = match mode {
             ThemeMode::Dark => Theme::dark(),
@@ -387,5 +418,22 @@ impl ThemeManager {
             self.current_index -= 1;
         }
         self.current_theme = self.themes[self.current_index].clone();
+    }
+    
+    /// Override specific colors in the current theme
+    pub fn override_selection_bg(&mut self, color: Color) {
+        self.current_theme.selected_bg = color;
+    }
+    
+    pub fn override_directory_color(&mut self, color: Color) {
+        self.current_theme.directory = color;
+    }
+    
+    pub fn override_executable_color(&mut self, color: Color) {
+        self.current_theme.executable = color;
+    }
+    
+    pub fn override_symlink_color(&mut self, color: Color) {
+        self.current_theme.symlink = color;
     }
 }

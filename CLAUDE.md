@@ -1,0 +1,1 @@
+- "Please increase patch version with every new release and not minor version. Our versioning is Vmajor.minor.patch"
