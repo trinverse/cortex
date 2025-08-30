@@ -1,0 +1,37 @@
+# Test configuration to verify all settings work
+
+[general]
+show_hidden = true              # Should show hidden files
+confirm_delete = false          # Should delete without confirmation
+confirm_operations = false      # Should copy/move without confirmation
+show_icons = true              # Should show file type icons
+terminal = "zsh"               # Default terminal
+editor = "nano"                # Default editor
+auto_reload = true             # Enable auto-reload
+plugin_directory = "plugins"   # Plugin directory
+theme = "gruvbox"              # Theme setting
+
+[panels]
+default_sort = "size"          # Sort by size instead of name
+show_size = false              # Should hide file sizes
+show_permissions = false       # Should hide permissions
+show_modified = false          # Should hide modified dates
+
+[colors]
+selection_bg = "green"         # Green selection background
+directory_fg = "yellow"        # Yellow directories
+executable_fg = "red"          # Red executables
+symlink_fg = "blue"            # Blue symlinks
+
+[plugins]
+enable_plugins = false         # Should disable plugins
+auto_reload_plugins = true     # Auto-reload plugins
+allow_unsafe_plugins = true    # Allow unsafe plugins
+disabled_plugins = ["test"]    # Disabled plugins list
+
+[network]
+connection_timeout = 60        # Network timeout
+save_credentials = true        # Save credentials
+verify_ssl = true              # Verify SSL
+enable_compression = true      # Enable compression
+known_hosts = ["example.com"]  # Known hosts
