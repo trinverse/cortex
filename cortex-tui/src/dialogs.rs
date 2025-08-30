@@ -280,7 +280,7 @@ impl HelpDialog {
             ("F6".to_string(), "Move/rename files".to_string()),
             ("F7".to_string(), "Create directory".to_string()),
             ("F8".to_string(), "Delete files".to_string()),
-            ("F9".to_string(), "Next theme".to_string()),
+            ("F9".to_string(), "Config".to_string()),
             ("F10".to_string(), "Toggle random theme".to_string()),
             ("Space".to_string(), "Mark/unmark file".to_string()),
             ("Ctrl+A".to_string(), "Mark all".to_string()),
@@ -356,7 +356,7 @@ pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog, theme: &cortex_core
         Dialog::Search(d) => d.render(frame),
         Dialog::Connection(d) => d.render(frame),
         Dialog::Plugin(d) => d.render(frame),
-        Dialog::Config(d) => d.render(frame),
+        Dialog::Config(d) => d.render(frame, theme),
         Dialog::SaveConfirm(d) => {
             let area = centered_rect(60, 20, frame.area());
             render_save_confirm_dialog(frame, area, d)

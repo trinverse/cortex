@@ -63,7 +63,7 @@ When you first launch Cortex, you'll see:
 │                         │                         │
 └─────────────────────────┴─────────────────────────┘
 [Command Line]
-F1 Help F2 Menu F3 View F4 Edit F5 Copy F6 Move F7 Mkdir F8 Delete F9 Menu F10 Quit
+F1 Help F2 Menu F3 View F4 Edit F5 Copy F6 Move F7 Mkdir F8 Delete F9 Config F10 Quit
 ```
 
 ## Basic Navigation

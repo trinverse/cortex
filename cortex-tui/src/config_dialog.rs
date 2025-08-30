@@ -1,7 +1,7 @@
 use cortex_core::Config;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Tabs},
     Frame,
@@ -50,6 +50,7 @@ impl ConfigTab {
 #[derive(Debug, Clone)]
 pub struct ConfigDialog {
     pub config: Config,
+    pub dirty: bool,
     pub current_tab: ConfigTab,
     pub selected_index: usize,
     pub editing: bool,
@@ -63,24 +64,27 @@ pub struct ConfigDialog {
 }
 
 impl ConfigDialog {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, theme_manager: &cortex_core::ThemeManager) -> Self {
+        let ai_provider = config.ai.default_provider.clone();
+        let available_themes = theme_manager
+            .available_themes()
+            .iter()
+            .map(|t| (t.mode.name().to_lowercase(), t.mode.name().to_string()))
+            .collect();
+        let current_theme = theme_manager.get_current_theme().mode.name().to_lowercase();
+
         Self {
             config,
+            dirty: false,
             current_tab: ConfigTab::General,
             selected_index: 0,
             editing: false,
             edit_value: String::new(),
             edit_cursor: 0,
-            available_themes: vec![
-                ("default".to_string(), "Default".to_string()),
-                ("dark".to_string(), "Dark".to_string()),
-                ("light".to_string(), "Light".to_string()),
-                ("nord".to_string(), "Nord".to_string()),
-                ("solarized".to_string(), "Solarized".to_string()),
-            ],
-            current_theme: "default".to_string(),
+            available_themes,
+            current_theme,
             ai_api_key: String::new(),
-            ai_provider: "groq".to_string(),
+            ai_provider,
             available_providers: vec![
                 "groq".to_string(),
                 "openai".to_string(),
@@ -177,9 +181,8 @@ impl ConfigDialog {
                 2 => self.config.general.show_icons.to_string(),
                 3 => self.config.general.auto_reload.to_string(),
                 4 => self.config.general.confirm_operations.to_string(),
-                5 => self.config.general.enable_sound.to_string(),
-                6 => self.config.general.terminal.clone(),
-                7 => self.config.general.editor.clone(),
+                5 => self.config.general.terminal.clone(),
+                6 => self.config.general.editor.clone(),
                 _ => String::new(),
             },
             ConfigTab::Panels => match self.selected_index {
@@ -225,6 +228,7 @@ impl ConfigDialog {
     }
 
     pub fn set_current_value(&mut self, value: &str) {
+        self.dirty = true;
         match self.current_tab {
             ConfigTab::General => match self.selected_index {
                 0 => self.config.general.show_hidden = value.parse().unwrap_or(false),
@@ -232,9 +236,8 @@ impl ConfigDialog {
                 2 => self.config.general.show_icons = value.parse().unwrap_or(false),
                 3 => self.config.general.auto_reload = value.parse().unwrap_or(true),
                 4 => self.config.general.confirm_operations = value.parse().unwrap_or(true),
-                5 => self.config.general.enable_sound = value.parse().unwrap_or(false),
-                6 => self.config.general.terminal = value.to_string(),
-                7 => self.config.general.editor = value.to_string(),
+                5 => self.config.general.terminal = value.to_string(),
+                6 => self.config.general.editor = value.to_string(),
                 _ => {}
             },
             ConfigTab::Panels => match self.selected_index {
@@ -273,7 +276,10 @@ impl ConfigDialog {
                 _ => {}
             },
             ConfigTab::Themes => match self.selected_index {
-                0 => self.current_theme = value.to_string(),
+                0 => {
+                    self.current_theme = value.to_string();
+                    self.config.general.theme = value.to_string();
+                }
                 _ => {}
             },
             ConfigTab::AI => match self.selected_index {
@@ -311,7 +317,7 @@ impl ConfigDialog {
         }
     }
 
-    pub fn render(&self, frame: &mut Frame) {
+    pub fn render(&self, frame: &mut Frame, theme: &cortex_core::Theme) {
         let area = centered_rect(85, 80, frame.area());
         frame.render_widget(Clear, area);
 
@@ -328,14 +334,14 @@ impl ConfigDialog {
         // Tabs
         let tabs_block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Green));
+            .border_style(Style::default().fg(theme.active_border));
         let tabs_inner = tabs_block.inner(chunks[0]);
         frame.render_widget(tabs_block, chunks[0]);
 
         let tab_titles: Vec<_> = ConfigTab::all().iter().map(|t| t.title()).collect();
         let tabs = Tabs::new(tab_titles)
             .block(Block::default())
-            .highlight_style(Style::default().bg(Color::Green).fg(Color::Black))
+            .highlight_style(Style::default().bg(theme.selected_bg).fg(theme.selected_fg))
             .select(
                 ConfigTab::all()
                     .iter()
@@ -348,16 +354,16 @@ impl ConfigDialog {
         let content_block = Block::default()
             .title(format!(" {} Settings ", self.current_tab.title()))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Green));
+            .border_style(Style::default().fg(theme.active_border));
         let content_inner = content_block.inner(chunks[1]);
         frame.render_widget(content_block, chunks[1]);
 
-        self.render_tab_content(frame, content_inner);
+        self.render_tab_content(frame, content_inner, theme);
 
         // Help
         let help_block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Green));
+            .border_style(Style::default().fg(theme.active_border));
         let help_inner = help_block.inner(chunks[2]);
         frame.render_widget(help_block, chunks[2]);
 
@@ -367,12 +373,12 @@ impl ConfigDialog {
             " ↑↓: Navigate | ←→: Switch tabs | Enter: Edit | S: Save config | ESC: Close "
         };
         let help = Paragraph::new(help_text)
-            .style(Style::default().fg(Color::DarkGray))
+            .style(Style::default().fg(theme.dim_text))
             .alignment(Alignment::Center);
         frame.render_widget(help, help_inner);
     }
 
-    fn render_tab_content(&self, frame: &mut Frame, area: Rect) {
+    fn render_tab_content(&self, frame: &mut Frame, area: Rect, theme: &cortex_core::Theme) {
         let items = self.get_tab_items();
 
         let list_items: Vec<ListItem> = items
@@ -382,7 +388,7 @@ impl ConfigDialog {
                 let is_selected = idx == self.selected_index;
 
                 let style = if is_selected {
-                    Style::default().bg(Color::Blue).fg(Color::White)
+                    Style::default().bg(theme.selected_bg).fg(theme.selected_fg)
                 } else {
                     Style::default()
                 };
@@ -397,15 +403,15 @@ impl ConfigDialog {
                     Span::styled("  ", style),
                     Span::styled(
                         format!("{:<25}", name),
-                        style.fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                        style.fg(theme.highlight_text).add_modifier(Modifier::BOLD),
                     ),
                     Span::styled("  ", style),
                     Span::styled(
                         display_value.clone(),
                         style.fg(if is_selected && self.editing {
-                            Color::Yellow
+                            theme.warning
                         } else {
-                            Color::White
+                            theme.normal_text
                         }),
                     ),
                 ];
@@ -449,10 +455,6 @@ impl ConfigDialog {
                 (
                     "Confirm Operations".to_string(),
                     self.config.general.confirm_operations.to_string(),
-                ),
-                (
-                    "Enable Sound".to_string(),
-                    self.config.general.enable_sound.to_string(),
                 ),
                 (
                     "Default Terminal".to_string(),
@@ -567,15 +569,19 @@ impl ConfigDialog {
     }
 
     pub fn cycle_theme_forward(&mut self) {
+        self.dirty = true;
         let current_idx = self.available_themes
             .iter()
             .position(|(id, _)| id == &self.current_theme)
             .unwrap_or(0);
         let next_idx = (current_idx + 1) % self.available_themes.len();
         self.current_theme = self.available_themes[next_idx].0.clone();
+        self.config.general.theme = self.current_theme.clone();
+        self.edit_value = self.current_theme.clone();
     }
 
     pub fn cycle_theme_backward(&mut self) {
+        self.dirty = true;
         let current_idx = self.available_themes
             .iter()
             .position(|(id, _)| id == &self.current_theme)
@@ -586,18 +592,24 @@ impl ConfigDialog {
             current_idx - 1
         };
         self.current_theme = self.available_themes[prev_idx].0.clone();
+        self.config.general.theme = self.current_theme.clone();
+        self.edit_value = self.current_theme.clone();
     }
 
     pub fn cycle_provider_forward(&mut self) {
+        self.dirty = true;
         let current_idx = self.available_providers
             .iter()
             .position(|p| p == &self.ai_provider)
             .unwrap_or(0);
         let next_idx = (current_idx + 1) % self.available_providers.len();
         self.ai_provider = self.available_providers[next_idx].clone();
+        self.config.ai.default_provider = self.ai_provider.clone();
+        self.edit_value = self.ai_provider.clone();
     }
 
     pub fn cycle_provider_backward(&mut self) {
+        self.dirty = true;
         let current_idx = self.available_providers
             .iter()
             .position(|p| p == &self.ai_provider)
@@ -608,6 +620,8 @@ impl ConfigDialog {
             current_idx - 1
         };
         self.ai_provider = self.available_providers[prev_idx].clone();
+        self.config.ai.default_provider = self.ai_provider.clone();
+        self.edit_value = self.ai_provider.clone();
     }
 
     pub fn is_dropdown_field(&self) -> bool {
@@ -616,6 +630,23 @@ impl ConfigDialog {
             ConfigTab::AI => self.selected_index == 0,
             _ => false,
         }
+    }
+
+    pub fn is_boolean_field(&self) -> bool {
+        match self.current_tab {
+            ConfigTab::General => matches!(self.selected_index, 0 | 1 | 2 | 3 | 4),
+            ConfigTab::Panels => matches!(self.selected_index, 1 | 2 | 3),
+            ConfigTab::Plugins => matches!(self.selected_index, 0 | 1 | 2),
+            ConfigTab::Network => matches!(self.selected_index, 1 | 2 | 3),
+            _ => false,
+        }
+    }
+
+    pub fn toggle_current_boolean_value(&mut self) {
+        let current_value_str = self.get_current_value();
+        let current_value = current_value_str.parse::<bool>().unwrap_or(false);
+        self.set_current_value(&(!current_value).to_string());
+        self.edit_value = (!current_value).to_string();
     }
 }
 
