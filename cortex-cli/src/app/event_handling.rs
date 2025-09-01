@@ -200,11 +200,20 @@ impl App {
                 if !self.state.command_line.is_empty() {
                     return self.handle_command_execution().await;
                 } else {
-                    // Enter on empty command line navigates into directories (like Right arrow)
+                    // Enter on empty command line navigates directories (like Right arrow)
                     let current_entry = self.state.active_panel().current_entry().cloned();
                     if let Some(entry) = current_entry {
-                        if entry.file_type == cortex_core::FileType::Directory && entry.name != ".." {
-                            let _ = self.navigate_to_directory(entry.path);
+                        if entry.file_type == cortex_core::FileType::Directory {
+                            if entry.name == ".." {
+                                // Navigate to parent directory
+                                let current_dir = self.state.active_panel().current_dir.clone();
+                                if let Some(parent) = current_dir.parent() {
+                                    let _ = self.navigate_to_directory(parent.to_path_buf());
+                                }
+                            } else {
+                                // Navigate into subdirectory
+                                let _ = self.navigate_to_directory(entry.path);
+                            }
                         }
                     }
                 }
