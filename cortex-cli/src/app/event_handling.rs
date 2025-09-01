@@ -1,6 +1,6 @@
 use anyhow::Result;
 use cortex_core::FileOperation;
-use cortex_tui::{Event, Dialog};
+use cortex_tui::{Event, Dialog, CommandPaletteDialog, FileViewer, TextEditor, ViewerDialog, EditorDialog, HelpDialog, InputDialog};
 use crossterm::event::{KeyCode, KeyModifiers, KeyEvent};
 use crossterm::{
     execute,
@@ -140,6 +140,62 @@ impl App {
             }
 
             // File operations
+            (KeyCode::F(1), _) => {
+                // F1 - Help
+                self.dialog = Some(Dialog::Help(HelpDialog::new()));
+            }
+            (KeyCode::F(2), _) => {
+                // F2 - Rename file
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if entry.name != ".." {
+                        self.dialog = Some(Dialog::Input(
+                            InputDialog::new("Rename", "Enter new name:")
+                                .with_value(&entry.name)
+                        ));
+                        self.state.pending_operation = Some(cortex_core::FileOperation::Rename {
+                            old_path: entry.path.clone(),
+                            new_name: entry.name.clone(), // Will be updated when dialog closes
+                        });
+                    }
+                }
+            }
+            (KeyCode::F(3), _) => {
+                // F3 - View file
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if entry.file_type == cortex_core::FileType::File {
+                        match FileViewer::new(&entry.path) {
+                            Ok(mut viewer) => {
+                                // Load content with reasonable line limit for terminal height
+                                let terminal_height = self.terminal.size().unwrap_or_default().height as usize;
+                                let max_lines = terminal_height.saturating_sub(10); // Reserve space for UI
+                                if let Err(e) = viewer.load_content(max_lines.max(50)) {
+                                    self.state.set_status_message(format!("Failed to load file content: {}", e));
+                                } else {
+                                    self.dialog = Some(Dialog::Viewer(ViewerDialog::new(viewer)));
+                                }
+                            }
+                            Err(e) => {
+                                self.state.set_status_message(format!("Failed to open file: {}", e));
+                            }
+                        }
+                    }
+                }
+            }
+            (KeyCode::F(4), _) => {
+                // F4 - Edit file
+                if let Some(entry) = self.state.active_panel().current_entry() {
+                    if entry.file_type == cortex_core::FileType::File {
+                        match TextEditor::new(&entry.path) {
+                            Ok(editor) => {
+                                self.dialog = Some(Dialog::Editor(EditorDialog::new(editor)));
+                            }
+                            Err(e) => {
+                                self.state.set_status_message(format!("Failed to open file: {}", e));
+                            }
+                        }
+                    }
+                }
+            }
             (KeyCode::F(5), _) => {
                 self.handle_copy_operation().await?;
             }
@@ -159,6 +215,26 @@ impl App {
                     config,
                     &self.state.theme_manager,
                 )));
+            }
+            (KeyCode::F(11), _) => {
+                // F11 - Toggle command output visibility (terminal mode)
+                self.state.command_output_visible = !self.state.command_output_visible;
+                if self.state.command_output_visible {
+                    self.state.set_status_message("Command output panel enabled".to_string());
+                } else {
+                    self.state.set_status_message("Command output panel disabled".to_string());
+                }
+            }
+            (KeyCode::F(12), _) => {
+                // F12 - Show system information
+                let info = format!(
+                    "Cortex File Manager v{} | OS: {} | Arch: {} | Active Panel: {:?}",
+                    env!("CARGO_PKG_VERSION"),
+                    std::env::consts::OS,
+                    std::env::consts::ARCH,
+                    self.state.active_panel
+                );
+                self.state.set_status_message(info);
             }
 
             // Special keys with Ctrl
@@ -186,6 +262,10 @@ impl App {
             }
 
             // Command line handling
+            (KeyCode::Char('/'), _) if self.state.command_line.is_empty() => {
+                // Show command palette when / is typed on empty command line
+                self.dialog = Some(Dialog::CommandPalette(CommandPaletteDialog::new()));
+            }
             (KeyCode::Char(c), _) => {
                 self.state.command_line.insert(self.state.command_cursor, c);
                 self.state.command_cursor += 1;
@@ -278,13 +358,24 @@ impl App {
                     }
                     KeyCode::Enter => {
                         // Handle dialog submission
-                        if let Some(cortex_core::FileOperation::CreateDir { path }) = &self.state.pending_operation {
-                            let new_operation = cortex_core::FileOperation::CreateDir {
-                                path: path.join(&dialog.value),
-                            };
-                            self.execute_operation(new_operation).await?;
+                        match &self.state.pending_operation {
+                            Some(cortex_core::FileOperation::CreateDir { path }) => {
+                                let new_operation = cortex_core::FileOperation::CreateDir {
+                                    path: path.join(&dialog.value),
+                                };
+                                self.execute_operation(new_operation).await?;
+                            }
+                            Some(cortex_core::FileOperation::Rename { old_path, .. }) => {
+                                let new_operation = cortex_core::FileOperation::Rename {
+                                    old_path: old_path.clone(),
+                                    new_name: dialog.value.clone(),
+                                };
+                                self.execute_operation(new_operation).await?;
+                            }
+                            _ => {}
                         }
                         self.dialog = None;
+                        self.state.pending_operation = None;
                     }
                     KeyCode::Esc => {
                         self.dialog = None;
@@ -402,6 +493,57 @@ impl App {
                     }
                 }
             }
+            Some(Dialog::CommandPalette(dialog)) => {
+                match key.code {
+                    KeyCode::Char(c) => {
+                        dialog.insert_char(c);
+                    }
+                    KeyCode::Backspace => {
+                        dialog.delete_char();
+                    }
+                    KeyCode::Left => {
+                        dialog.move_cursor_left();
+                    }
+                    KeyCode::Right => {
+                        dialog.move_cursor_right();
+                    }
+                    KeyCode::Up => {
+                        dialog.move_selection_up();
+                    }
+                    KeyCode::Down => {
+                        dialog.move_selection_down();
+                    }
+                    KeyCode::PageUp => {
+                        dialog.page_up();
+                    }
+                    KeyCode::PageDown => {
+                        dialog.page_down();
+                    }
+                    KeyCode::Tab => {
+                        // Autocomplete - select current command
+                        if let Some(cmd) = dialog.get_selected_command() {
+                            dialog.input = cmd;
+                            dialog.cursor_position = dialog.input.len();
+                            dialog.filter_commands();
+                        }
+                    }
+                    KeyCode::Enter => {
+                        // Execute selected command
+                        if let Some(cmd) = dialog.get_selected_command() {
+                            self.dialog = None;
+                            // Remove the leading /
+                            let command = cmd.strip_prefix('/').unwrap_or(&cmd);
+                            if !self.handle_special_command(command).await? {
+                                return Ok(false);
+                            }
+                        }
+                    }
+                    KeyCode::Esc => {
+                        self.dialog = None;
+                    }
+                    _ => {}
+                }
+            }
             _ => {
                 // Handle other dialog types with basic Esc to close
                 if key.code == KeyCode::Esc {
@@ -411,6 +553,26 @@ impl App {
         }
 
         Ok(true)
+    }
+
+    /// Handle special commands from command palette
+    async fn handle_special_command(&mut self, command: &str) -> Result<bool> {
+        // Debug log to track which command is being executed
+        log::debug!("Executing special command: {}", command);
+
+        match command {
+            "exit" | "quit" | "q" => {
+                return Ok(false); // signal to exit
+            }
+            "restart" => {
+                let exe = std::env::current_exe()?;
+                let args: Vec<String> = std::env::args().skip(1).collect();
+                std::process::Command::new(exe).args(&args).spawn()?;
+                return Ok(false); // also exit after restart
+            }
+            _ => {}
+        }
+        Ok(true) // continue running
     }
 
     /// Handle application exit

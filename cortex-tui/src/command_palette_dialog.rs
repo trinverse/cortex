@@ -11,6 +11,7 @@ pub struct CommandPaletteDialog {
     pub input: String,
     pub cursor_position: usize,
     pub selected_index: usize,
+    pub scroll_offset: usize,
     pub filtered_commands: Vec<CommandInfo>,
     pub all_commands: Vec<CommandInfo>,
 }
@@ -36,6 +37,7 @@ impl CommandPaletteDialog {
             input: "/".to_string(),
             cursor_position: 1,
             selected_index: 0,
+            scroll_offset: 0,
             filtered_commands: all_commands.clone(),
             all_commands,
         }
@@ -263,11 +265,13 @@ impl CommandPaletteDialog {
             });
         }
 
-        // Reset selection if needed
+        // Reset selection and scroll if needed
         if self.selected_index >= self.filtered_commands.len() && !self.filtered_commands.is_empty()
         {
             self.selected_index = 0;
         }
+        // Always reset scroll when filtering changes
+        self.scroll_offset = 0;
     }
 
     pub fn insert_char(&mut self, c: char) {
@@ -302,12 +306,46 @@ impl CommandPaletteDialog {
         if self.selected_index > 0 {
             self.selected_index -= 1;
         }
+        self.update_scroll_for_selection();
     }
 
     pub fn move_selection_down(&mut self) {
         if self.selected_index < self.filtered_commands.len().saturating_sub(1) {
             self.selected_index += 1;
         }
+        self.update_scroll_for_selection();
+    }
+
+    fn update_scroll_for_selection(&mut self) {
+        // Calculate approximately how many items we can show (this will be refined in render)
+        let estimated_visible = 15; // Conservative estimate for visible items
+        
+        if self.selected_index < self.scroll_offset {
+            self.scroll_offset = self.selected_index;
+        } else if self.selected_index >= self.scroll_offset + estimated_visible {
+            self.scroll_offset = self.selected_index.saturating_sub(estimated_visible - 1);
+        }
+    }
+
+    pub fn page_up(&mut self) {
+        let page_size = 10; // Items to jump per page
+        if self.selected_index >= page_size {
+            self.selected_index -= page_size;
+        } else {
+            self.selected_index = 0;
+        }
+        self.update_scroll_for_selection();
+    }
+
+    pub fn page_down(&mut self) {
+        let page_size = 10; // Items to jump per page
+        let max_index = self.filtered_commands.len().saturating_sub(1);
+        if self.selected_index + page_size <= max_index {
+            self.selected_index += page_size;
+        } else {
+            self.selected_index = max_index;
+        }
+        self.update_scroll_for_selection();
     }
 
     pub fn get_selected_command(&self) -> Option<String> {
@@ -358,24 +396,29 @@ impl CommandPaletteDialog {
                 .alignment(Alignment::Center);
             frame.render_widget(no_results, list_inner);
         } else {
-            // Group commands by category
-            let mut items = Vec::new();
+            // Calculate available height for list items
+            let available_height = list_inner.height as usize;
+            
+            // Build all items first to handle proper scrolling with categories
+            let mut all_items = Vec::new();
+            let mut item_to_command_map = Vec::new(); // Maps item index to command index
             let mut current_category = String::new();
 
-            for (idx, cmd) in self.filtered_commands.iter().enumerate() {
+            for (cmd_idx, cmd) in self.filtered_commands.iter().enumerate() {
                 // Add category header if changed
                 if cmd.category != current_category {
                     current_category = cmd.category.clone();
-                    items.push(ListItem::new(Line::from(vec![Span::styled(
+                    all_items.push((None, ListItem::new(Line::from(vec![Span::styled(
                         format!(" {} ", current_category),
                         Style::default()
                             .fg(Color::Cyan)
                             .add_modifier(Modifier::BOLD),
-                    )])));
+                    )]))));
+                    item_to_command_map.push(None); // Category header
                 }
 
                 // Create command item
-                let is_selected = idx == self.selected_index;
+                let is_selected = cmd_idx == self.selected_index;
                 let style = if is_selected {
                     Style::default().bg(Color::Blue).fg(Color::White)
                 } else {
@@ -399,10 +442,41 @@ impl CommandPaletteDialog {
                     ));
                 }
 
-                items.push(ListItem::new(Line::from(spans)));
+                all_items.push((Some(cmd_idx), ListItem::new(Line::from(spans))));
+                item_to_command_map.push(Some(cmd_idx)); // Command item
             }
 
-            let list = List::new(items);
+            // Find the display index of the selected command
+            let selected_display_index = all_items.iter()
+                .position(|(cmd_idx, _)| cmd_idx == &Some(self.selected_index))
+                .unwrap_or(0);
+
+            // Calculate scroll offset to keep selection visible
+            let max_visible = available_height.saturating_sub(1); // Reserve space for potential padding
+            let scroll_offset = if all_items.is_empty() {
+                0
+            } else {
+                // Ensure selected item is visible
+                let offset = self.scroll_offset;
+                
+                if selected_display_index < offset {
+                    selected_display_index
+                } else if selected_display_index >= offset + max_visible {
+                    selected_display_index.saturating_sub(max_visible.saturating_sub(1))
+                } else {
+                    offset
+                }
+            };
+
+            // Take only visible items
+            let visible_items: Vec<ListItem> = all_items
+                .into_iter()
+                .skip(scroll_offset)
+                .take(max_visible)
+                .map(|(_, item)| item)
+                .collect();
+
+            let list = List::new(visible_items);
             frame.render_widget(list, list_inner);
         }
 
@@ -413,7 +487,7 @@ impl CommandPaletteDialog {
         let help_inner = help_block.inner(chunks[2]);
         frame.render_widget(help_block, chunks[2]);
 
-        let help_text = " ↑↓: Navigate | Enter: Execute | Tab: Autocomplete | ESC: Cancel ";
+        let help_text = " ↑↓: Navigate | PgUp/PgDn: Fast scroll | Enter: Execute | Tab: Autocomplete | ESC: Cancel ";
         let help = Paragraph::new(help_text)
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center);
