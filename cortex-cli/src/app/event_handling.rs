@@ -199,6 +199,14 @@ impl App {
             (KeyCode::Enter, _) => {
                 if !self.state.command_line.is_empty() {
                     return self.handle_command_execution().await;
+                } else {
+                    // Enter on empty command line navigates into directories (like Right arrow)
+                    let current_entry = self.state.active_panel().current_entry().cloned();
+                    if let Some(entry) = current_entry {
+                        if entry.file_type == cortex_core::FileType::Directory && entry.name != ".." {
+                            let _ = self.navigate_to_directory(entry.path);
+                        }
+                    }
                 }
             }
             (KeyCode::Esc, _) => {
