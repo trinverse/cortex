@@ -1,7 +1,6 @@
 use anyhow::Result;
 
-/// Simple terminal renderer that maintains terminal state
-/// In a real implementation, this would handle actual rendering
+/// Terminal renderer that maintains terminal state
 pub struct TerminalRenderer {
     width: u32,
     height: u32,
@@ -28,11 +27,6 @@ impl TerminalRenderer {
             rows,
             content: Vec::new(),
         }
-    }
-    
-    pub fn initialize(&mut self, _window: std::sync::Arc<winit::window::Window>) -> Result<()> {
-        // In a real implementation, initialize rendering context here
-        Ok(())
     }
     
     pub fn resize(&mut self, width: u32, height: u32) -> Result<()> {

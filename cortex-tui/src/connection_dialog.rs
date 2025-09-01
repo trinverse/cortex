@@ -144,7 +144,7 @@ impl ConnectionDialog {
     }
 
     pub fn render(&self, frame: &mut Frame) {
-        let area = self.centered_rect(70, 70, frame.area());
+        let area = self.centered_rect(70, 70, frame.size());
         frame.render_widget(Clear, area);
 
         let connection_name = match self.connection_type {
@@ -295,7 +295,7 @@ impl ConnectionDialog {
         // Cursor
         if is_selected {
             let cursor_x = input_inner.x + self.cursor_position.min(value.len()) as u16;
-            frame.set_cursor_position((cursor_x, input_inner.y));
+            frame.set_cursor(cursor_x, input_inner.y);
         }
     }
 

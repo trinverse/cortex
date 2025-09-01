@@ -318,7 +318,7 @@ impl ConfigDialog {
     }
 
     pub fn render(&self, frame: &mut Frame, theme: &cortex_core::Theme) {
-        let area = centered_rect(85, 80, frame.area());
+        let area = centered_rect(85, 80, frame.size());
         frame.render_widget(Clear, area);
 
         // Main layout
@@ -339,9 +339,17 @@ impl ConfigDialog {
         frame.render_widget(tabs_block, chunks[0]);
 
         let tab_titles: Vec<_> = ConfigTab::all().iter().map(|t| t.title()).collect();
+        
+        // Apply same explicit color fix for tabs as we did for list items
+        let tab_highlight_style = if theme.mode == cortex_core::ThemeMode::Light {
+            Style::default().bg(ratatui::style::Color::Rgb(210, 227, 252)).fg(ratatui::style::Color::Rgb(24, 28, 33))
+        } else {
+            Style::default().bg(theme.selected_bg).fg(theme.selected_fg)
+        };
+        
         let tabs = Tabs::new(tab_titles)
             .block(Block::default())
-            .highlight_style(Style::default().bg(theme.selected_bg).fg(theme.selected_fg))
+            .highlight_style(tab_highlight_style)
             .select(
                 ConfigTab::all()
                     .iter()
@@ -387,33 +395,51 @@ impl ConfigDialog {
             .map(|(idx, (name, value))| {
                 let is_selected = idx == self.selected_index;
 
-                let style = if is_selected {
-                    Style::default().bg(theme.selected_bg).fg(theme.selected_fg)
-                } else {
-                    Style::default()
-                };
-
                 let display_value = if is_selected && self.editing {
                     &self.edit_value
                 } else {
                     value
                 };
 
+                // Force explicit colors to avoid any inheritance issues
+                use ratatui::style::Color;
+                
+                let (bg_color, fg_color) = if is_selected {
+                    // Force light theme colors if selected
+                    if theme.mode == cortex_core::ThemeMode::Light {
+                        (Color::Rgb(210, 227, 252), Color::Rgb(24, 28, 33)) // Light blue bg, dark text
+                    } else {
+                        (theme.selected_bg, theme.selected_fg)
+                    }
+                } else {
+                    (Color::Reset, theme.normal_text)
+                };
+
+                let base_style = if is_selected {
+                    Style::default().bg(bg_color).fg(fg_color)
+                } else {
+                    Style::default().fg(theme.normal_text)
+                };
+
+                let name_style = if is_selected {
+                    Style::default().bg(bg_color).fg(fg_color).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(theme.highlight_text).add_modifier(Modifier::BOLD)
+                };
+
+                let value_style = if is_selected && self.editing {
+                    Style::default().bg(bg_color).fg(theme.warning)
+                } else if is_selected {
+                    Style::default().bg(bg_color).fg(fg_color)
+                } else {
+                    Style::default().fg(theme.normal_text)
+                };
+
                 let spans = vec![
-                    Span::styled("  ", style),
-                    Span::styled(
-                        format!("{:<25}", name),
-                        style.fg(theme.highlight_text).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled("  ", style),
-                    Span::styled(
-                        display_value.clone(),
-                        style.fg(if is_selected && self.editing {
-                            theme.warning
-                        } else {
-                            theme.normal_text
-                        }),
-                    ),
+                    Span::styled("  ", base_style),
+                    Span::styled(format!("{:<25}", name), name_style),
+                    Span::styled("  ", base_style),
+                    Span::styled(display_value.clone(), value_style),
                 ];
 
                 ListItem::new(Line::from(spans))
@@ -428,7 +454,7 @@ impl ConfigDialog {
             let cursor_x = area.x + 27 + self.edit_cursor as u16;
             let cursor_y = area.y + self.selected_index as u16;
             if cursor_y < area.y + area.height {
-                frame.set_cursor_position((cursor_x, cursor_y));
+                frame.set_cursor(cursor_x, cursor_y);
             }
         }
     }

@@ -167,7 +167,7 @@ impl AIChatDialog {
 }
 
 pub fn draw_ai_chat_dialog(frame: &mut Frame, dialog: &mut AIChatDialog, theme: &cortex_core::Theme) {
-    let size = frame.area();
+    let size = frame.size();
     
     // Calculate dialog size (80% width, 70% height)
     let dialog_width = size.width * 4 / 5;
@@ -305,8 +305,8 @@ pub fn draw_ai_chat_dialog(frame: &mut Frame, dialog: &mut AIChatDialog, theme: 
     frame.render_widget(input_paragraph, chunks[1]);
     
     // Set cursor position - always show cursor for input
-    frame.set_cursor_position((
+    frame.set_cursor(
         chunks[1].x + 1 + dialog.cursor_position as u16,
         chunks[1].y + 1,
-    ));
+    );
 }

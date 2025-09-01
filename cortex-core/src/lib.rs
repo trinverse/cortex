@@ -15,6 +15,7 @@ pub mod terminal;
 pub mod theme;
 pub mod vfs;
 pub mod virtual_scroll;
+#[cfg(feature = "windowed")]
 pub mod window;
 
 pub use cache::{CacheConfig, CacheRefresher, CacheStatistics, DirectoryCache};

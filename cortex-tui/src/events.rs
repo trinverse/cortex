@@ -2,6 +2,10 @@ use anyhow::Result;
 use crossterm::event::{
     self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent,
 };
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -16,32 +20,48 @@ pub enum Event {
 pub struct EventHandler {
     _sender: mpsc::UnboundedSender<Event>,
     receiver: mpsc::UnboundedReceiver<Event>,
+    shutdown_flag: Arc<AtomicBool>,
 }
 
 impl EventHandler {
     pub fn new(tick_rate: Duration) -> Self {
         let (sender, receiver) = mpsc::unbounded_channel();
         let sender_clone = sender.clone();
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let shutdown_flag_clone = shutdown_flag.clone();
 
         tokio::spawn(async move {
             loop {
+                // Check for shutdown signal
+                if shutdown_flag_clone.load(Ordering::Relaxed) {
+                    break;
+                }
+
                 if event::poll(tick_rate).unwrap_or(false) {
                     if let Ok(event) = event::read() {
                         match event {
                             CrosstermEvent::Key(key) => {
-                                let _ = sender_clone.send(Event::Key(key));
+                                if sender_clone.send(Event::Key(key)).is_err() {
+                                    break; // Receiver dropped, exit loop
+                                }
                             }
                             CrosstermEvent::Mouse(mouse) => {
-                                let _ = sender_clone.send(Event::Mouse(mouse));
+                                if sender_clone.send(Event::Mouse(mouse)).is_err() {
+                                    break; // Receiver dropped, exit loop
+                                }
                             }
                             CrosstermEvent::Resize(width, height) => {
-                                let _ = sender_clone.send(Event::Resize(width, height));
+                                if sender_clone.send(Event::Resize(width, height)).is_err() {
+                                    break; // Receiver dropped, exit loop
+                                }
                             }
                             _ => {}
                         }
                     }
                 } else {
-                    let _ = sender_clone.send(Event::Tick);
+                    if sender_clone.send(Event::Tick).is_err() {
+                        break; // Receiver dropped, exit loop
+                    }
                 }
             }
         });
@@ -49,7 +69,13 @@ impl EventHandler {
         Self {
             _sender: sender,
             receiver,
+            shutdown_flag,
         }
+    }
+
+    /// Shutdown the background event handling task
+    pub fn shutdown(&self) {
+        self.shutdown_flag.store(true, Ordering::Relaxed);
     }
 
     pub async fn next(&mut self) -> Result<Event> {

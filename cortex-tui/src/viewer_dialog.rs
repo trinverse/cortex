@@ -24,7 +24,7 @@ impl ViewerDialog {
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
-        let area = centered_rect(90, 90, frame.area());
+        let area = centered_rect(90, 90, frame.size());
         frame.render_widget(Clear, area);
 
         // Main layout
@@ -112,10 +112,10 @@ impl ViewerDialog {
             frame.render_widget(search_text, search_inner);
 
             // Show cursor
-            frame.set_cursor_position((
+            frame.set_cursor(
                 search_inner.x + self.search_input.len() as u16,
                 search_inner.y,
-            ));
+);
         } else {
             let help_text = if self.viewer.hex_mode {
                 " ESC/F3: Exit | H: Toggle Hex | /: Search | F: Search Next | ↑↓: Scroll | PgUp/PgDn: Page "

@@ -66,7 +66,7 @@ impl FilterDialog {
     }
 
     pub fn render(&self, frame: &mut Frame) {
-        let area = centered_rect(50, 7, frame.area());
+        let area = centered_rect(50, 7, frame.size());
         frame.render_widget(Clear, area);
 
         let block = Block::default()
@@ -98,7 +98,7 @@ impl FilterDialog {
         frame.render_widget(input_text, chunks[1]);
 
         // Show cursor
-        frame.set_cursor_position((chunks[1].x + self.cursor_position as u16, chunks[1].y));
+        frame.set_cursor(chunks[1].x + self.cursor_position as u16, chunks[1].y);
 
         // Help text
         let help = Paragraph::new("Enter: Apply | ESC: Cancel | Ctrl+U: Clear")

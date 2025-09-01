@@ -14,13 +14,12 @@ name = "cortex"
 path = "src/main.rs"
 
 [dependencies]
-cortex-core = { path = "../cortex-core" }
+cortex-core = { path = "../cortex-core", features = ["windowed"] }
 cortex-tui = { path = "../cortex-tui" }
 cortex-plugins = { path = "../cortex-plugins" }
 cortex-updater = { path = "../cortex-updater" }
 tokio = { workspace = true }
 anyhow = { workspace = true }
-winit = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 dirs = { workspace = true }
@@ -31,6 +30,14 @@ crossterm = { workspace = true }
 ratatui = { workspace = true }
 semver = "1.0"
 chrono = { workspace = true }
+winit = { workspace = true }
+pixels = { workspace = true }
+fontdue = { workspace = true }
+dotenvy = { workspace = true }
+
+[features]
+default = ["windowed"]
+windowed = ["cortex-core/windowed"]
 
 [dev-dependencies]
 criterion = { workspace = true }

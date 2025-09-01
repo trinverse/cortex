@@ -1,1 +1,2 @@
 - "Please increase patch version with every new release and not minor version. Our versioning is Vmajor.minor.patch"
+- to memorize "Please make sure our code remain modular and clean all the time"

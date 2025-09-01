@@ -225,3 +225,32 @@ impl App {
         Ok(())
     }
 }
+
+impl Drop for App {
+    fn drop(&mut self) {
+        // Shutdown background services
+        self.events.shutdown();
+        
+        // Ensure terminal cleanup happens on drop
+        if let Err(e) = self.cleanup_terminal_on_drop() {
+            eprintln!("Failed to cleanup terminal on drop: {}", e);
+        }
+    }
+}
+
+impl App {
+    /// Emergency terminal cleanup for Drop implementation
+    fn cleanup_terminal_on_drop(&mut self) -> Result<()> {
+        use crossterm::{execute, terminal::{disable_raw_mode, LeaveAlternateScreen}, event::DisableMouseCapture, style::ResetColor};
+        use std::io;
+        
+        // Try to flush first
+        let _ = self.terminal.flush();
+        
+        // Basic terminal cleanup
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture, ResetColor);
+        let _ = disable_raw_mode();
+        
+        Ok(())
+    }
+}

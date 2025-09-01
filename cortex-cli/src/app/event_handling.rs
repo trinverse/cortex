@@ -8,6 +8,7 @@ use crossterm::{
     terminal::{disable_raw_mode, Clear, ClearType, LeaveAlternateScreen},
     event::DisableMouseCapture,
 };
+use std::io;
 
 use super::App;
 
@@ -294,20 +295,50 @@ impl App {
                 if dialog.editing {
                     // Handle editing mode
                     match key.code {
+                        KeyCode::Up => {
+                            if dialog.is_boolean_field() {
+                                dialog.toggle_current_boolean_value();
+                            } else if dialog.current_tab == cortex_tui::ConfigTab::Themes {
+                                dialog.cycle_theme_backward();
+                            } else if dialog.current_tab == cortex_tui::ConfigTab::AI && dialog.selected_index == 0 {
+                                dialog.cycle_provider_backward();
+                            }
+                        }
+                        KeyCode::Down => {
+                            if dialog.is_boolean_field() {
+                                dialog.toggle_current_boolean_value();
+                            } else if dialog.current_tab == cortex_tui::ConfigTab::Themes {
+                                dialog.cycle_theme_forward();
+                            } else if dialog.current_tab == cortex_tui::ConfigTab::AI && dialog.selected_index == 0 {
+                                dialog.cycle_provider_forward();
+                            }
+                        }
                         KeyCode::Char(c) => {
-                            dialog.insert_char(c);
+                            if !dialog.is_dropdown_field() && !dialog.is_boolean_field() {
+                                dialog.insert_char(c);
+                            }
                         }
                         KeyCode::Backspace => {
-                            dialog.delete_char();
+                            if !dialog.is_dropdown_field() && !dialog.is_boolean_field() {
+                                dialog.delete_char();
+                            }
                         }
                         KeyCode::Left => {
-                            dialog.move_cursor_left();
+                            if !dialog.is_dropdown_field() && !dialog.is_boolean_field() {
+                                dialog.move_cursor_left();
+                            }
                         }
                         KeyCode::Right => {
-                            dialog.move_cursor_right();
+                            if !dialog.is_dropdown_field() && !dialog.is_boolean_field() {
+                                dialog.move_cursor_right();
+                            }
                         }
                         KeyCode::Enter => {
-                            dialog.confirm_edit();
+                            if dialog.is_boolean_field() || dialog.is_dropdown_field() {
+                                dialog.cancel_edit(); // Just exit edit mode, changes are already applied
+                            } else {
+                                dialog.confirm_edit(); // For text fields
+                            }
                         }
                         KeyCode::Esc => {
                             dialog.cancel_edit();
@@ -367,6 +398,20 @@ impl App {
 
     /// Handle application exit
     async fn handle_exit(&mut self) -> Result<bool> {
+        // Stop all background services
+        self.shutdown_background_services().await?;
+
+        // Properly clean up terminal state
+        self.cleanup_terminal()?;
+
+        Ok(false) // Signal to exit
+    }
+
+    /// Shutdown all background services
+    async fn shutdown_background_services(&mut self) -> Result<()> {
+        // Stop event handler background task
+        self.events.shutdown();
+
         // Stop file monitoring if active
         if let Some(ref monitor) = self.state.file_monitor {
             if let Err(e) = monitor.stop().await {
@@ -374,22 +419,49 @@ impl App {
             }
         }
 
-        // Reset terminal colors before exit
+        // Close all channels by dropping the receivers
+        self.operation_rx = None;
+        self.search_rx = None;
+        self.file_change_rx = None;
+        self.command_output_rx = None;
+        self.file_event_rx = None;
+        self.ai_response_rx = None;
+
+        // Small delay to ensure background tasks have time to clean up
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        Ok(())
+    }
+
+    /// Clean up terminal and restore normal mode
+    fn cleanup_terminal(&mut self) -> Result<()> {
+        // Flush any pending output
+        let _ = self.terminal.flush();
+
+        // Clear screen and reset cursor
         let _ = execute!(
             self.terminal.backend_mut(),
             ResetColor,
             Clear(ClearType::All)
         );
 
-        // Cleanup terminal
-        let _ = disable_raw_mode();
+        // Leave alternate screen and disable mouse capture
         let _ = execute!(
             self.terminal.backend_mut(),
             LeaveAlternateScreen,
             DisableMouseCapture
         );
 
-        Ok(false) // Signal to exit
+        // Disable raw mode to restore normal terminal behavior
+        let _ = disable_raw_mode();
+
+        // Force flush to ensure all commands are sent
+        let _ = execute!(
+            io::stdout(),
+            ResetColor
+        );
+
+        Ok(())
     }
 
     /// Handle command execution

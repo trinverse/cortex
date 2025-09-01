@@ -148,8 +148,10 @@ impl TerminalEmulator {
             master.resize(pty_size)?;
         }
         
+        // Create a new parser with the new size (vt100 0.16+ doesn't have set_size)
+        let new_parser = Parser::new(rows, cols, 1000);
         if let Ok(mut parser) = self.parser.lock() {
-            parser.set_size(rows, cols);
+            *parser = new_parser;
         }
         
         self.event_tx.send(TerminalEvent::Resize(self.size.clone()))?;

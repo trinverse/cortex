@@ -28,7 +28,7 @@ impl EditorDialog {
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
-        let area = centered_rect(95, 95, frame.area());
+        let area = centered_rect(95, 95, frame.size());
         frame.render_widget(Clear, area);
 
         // Main layout
@@ -125,7 +125,7 @@ impl EditorDialog {
             let cursor_y = inner.y + (self.editor.cursor_row - self.editor.offset_row) as u16;
 
             if cursor_x < inner.x + inner.width && cursor_y < inner.y + inner.height {
-                frame.set_cursor_position((cursor_x, cursor_y));
+                frame.set_cursor(cursor_x, cursor_y);
             }
         }
 
@@ -154,10 +154,10 @@ impl EditorDialog {
             frame.render_widget(search_text, search_inner);
 
             // Show cursor
-            frame.set_cursor_position((
+            frame.set_cursor(
                 search_inner.x + self.search_input.len() as u16,
                 search_inner.y,
-            ));
+            );
         } else if self.replace_mode {
             let replace_block = Block::default()
                 .borders(Borders::BOTTOM | Borders::LEFT | Borders::RIGHT)
@@ -170,10 +170,10 @@ impl EditorDialog {
             frame.render_widget(replace_text, replace_inner);
 
             // Show cursor
-            frame.set_cursor_position((
+            frame.set_cursor(
                 replace_inner.x + self.replace_input.len() as u16,
                 replace_inner.y,
-            ));
+            );
         } else {
             let help_text = " ESC/F4: Exit | Ctrl+S: Save | Ctrl+F: Find | Ctrl+R: Replace | Ctrl+Z: Undo | Ctrl+Y: Redo ";
 

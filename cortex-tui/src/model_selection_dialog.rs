@@ -85,7 +85,7 @@ impl ModelSelectionDialog {
 }
 
 pub fn draw_model_selection_dialog(frame: &mut Frame, dialog: &ModelSelectionDialog, theme: &cortex_core::Theme) {
-    let size = frame.area();
+    let size = frame.size();
     
     // Calculate dialog size (90% width, 80% height for more space)
     let dialog_width = size.width * 9 / 10;

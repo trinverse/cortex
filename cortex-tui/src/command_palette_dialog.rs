@@ -317,7 +317,7 @@ impl CommandPaletteDialog {
     }
 
     pub fn render(&self, frame: &mut Frame) {
-        let area = centered_rect(70, 80, frame.area());
+        let area = centered_rect(70, 80, frame.size());
         frame.render_widget(Clear, area);
 
         // Main layout
@@ -343,7 +343,7 @@ impl CommandPaletteDialog {
         frame.render_widget(input_text, input_inner);
 
         // Show cursor
-        frame.set_cursor_position((input_inner.x + self.cursor_position as u16, input_inner.y));
+        frame.set_cursor(input_inner.x + self.cursor_position as u16, input_inner.y);
 
         // Command list
         let list_block = Block::default()

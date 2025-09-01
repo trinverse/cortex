@@ -48,10 +48,12 @@ vt100 = { workspace = true }
 strip-ansi-escapes = { workspace = true }
 which = { workspace = true }
 # Window creation
-winit = { workspace = true }
-raw-window-handle = { workspace = true }
-pixels = { workspace = true }
-wgpu = { workspace = true }
+winit = { workspace = true, optional = true }
+raw-window-handle = { workspace = true, optional = true }
+sugarloaf = { workspace = true, optional = true }
+vte = { workspace = true, optional = true }
+pixels = { workspace = true, optional = true }
+fontdue = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -65,3 +67,4 @@ path = "../examples/test_ai.rs"
 default = []
 ssh = ["dep:ssh2", "dep:suppaftp"]
 full = ["ssh"]
+windowed = ["winit", "raw-window-handle", "sugarloaf", "vte", "pixels", "fontdue"]

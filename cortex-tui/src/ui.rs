@@ -16,10 +16,10 @@ impl UI {
         let theme = app.theme_manager.get_current_theme();
 
         // FIRST: Fill entire terminal with theme background
-        Self::draw_background(frame, frame.area(), theme);
+        Self::draw_background(frame, frame.size(), theme);
 
         // Calculate command line height based on text width
-        let terminal_width = frame.area().width as usize;
+        let terminal_width = frame.size().width as usize;
         let prompt = "$ ";
         let prompt_width = prompt.width();
         let border_width = 2; // Left and right borders
@@ -52,7 +52,7 @@ impl UI {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(constraints)
-            .split(frame.area());
+            .split(frame.size());
 
         let (panels_area, command_output_area, command_area, status_area) =
             if app.command_output_visible {
@@ -441,10 +441,10 @@ impl UI {
 
         // Only show cursor if it's within the visible area
         if cursor_line < inner_area.height as usize {
-            frame.set_cursor_position((
+            frame.set_cursor(
                 inner_area.x + cursor_col as u16,
                 inner_area.y + cursor_line as u16,
-            ));
+);
         }
     }
 

@@ -283,6 +283,6 @@ fn draw_terminal_content(frame: &mut Frame, area: Rect, tab: &TerminalTab, theme
     if tab.is_active && area.height > 2 && area.width > 2 {
         let cursor_x = area.x + 1 + tab.cursor_pos.1.min(area.width - 2);
         let cursor_y = area.y + 1 + tab.cursor_pos.0.min(area.height - 2);
-        frame.set_cursor_position((cursor_x, cursor_y));
+        frame.set_cursor(cursor_x, cursor_y);
     }
 }
