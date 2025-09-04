@@ -1,5 +1,5 @@
 use anyhow::Result;
-use cortex_core::AppState;
+use cortex_core::{AppState, shortcuts::ShortcutManager};
 use cortex_tui::{
     ConfigDialog, Dialog, EditorDialog, EventHandler,
     MouseHandler, MouseRegionManager, NotificationManager, ContextMenu
@@ -23,6 +23,7 @@ pub struct App {
     pub state: AppState,
     pub terminal: Terminal<CrosstermBackend<io::Stdout>>,
     pub events: EventHandler,
+    pub shortcut_manager: ShortcutManager,
     
     // Dialog management
     pub dialog: Option<Dialog>,

@@ -344,6 +344,15 @@ impl OperationManager {
 
                 self.handler.execute(op, tx).await?;
             }
+            FileOperation::CopyAs { .. } => {
+                todo!()
+            }
+            FileOperation::CreateFile { .. } => {
+                todo!()
+            }
+            FileOperation::Filter { .. } => {
+                todo!()
+            }
         }
 
         Ok(())
@@ -428,6 +437,20 @@ impl OperationManager {
                     "Rename",
                     format!("Rename '{}' to '{}'?", old_name, new_name),
                 )
+            }
+            FileOperation::CopyAs { source, new_name, .. } => {
+                let source_name = source.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                (
+                    "Copy As",
+                    format!("Copy '{}' as '{}'?", source_name, new_name),
+                )
+            }
+            FileOperation::CreateFile { path } => {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                ("Create File", format!("Create file '{}'?", name))
+            }
+            FileOperation::Filter { filter } => {
+                ("Filter", format!("Apply filter '{}'?", filter))
             }
         };
 

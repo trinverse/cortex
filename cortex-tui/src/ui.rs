@@ -1,4 +1,7 @@
-use cortex_core::{ActivePanel, AppState, FileEntry, FileType, PanelState, VfsEntry, VfsEntryType};
+use cortex_core::{
+    state::{AppState, PanelState, ViewMode},
+    ActivePanel, FileEntry, FileType, VfsEntry, VfsEntryType,
+};
 use humansize;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -103,13 +106,13 @@ impl UI {
             if panel.is_using_vfs() {
                 if let Some(ref vfs_path) = panel.current_vfs_path {
                     match vfs_path {
-                        cortex_core::VfsPath::Archive { .. } => {
+                        cortex_core::vfs::VfsPath::Archive { .. } => {
                             format!(" [Archive] [Filter: {}] ", filter)
                         }
-                        cortex_core::VfsPath::Sftp { host, username, .. } => {
+                        cortex_core::vfs::VfsPath::Sftp { host, username, .. } => {
                             format!(" [SFTP: {}@{}] [Filter: {}] ", username, host, filter)
                         }
-                        cortex_core::VfsPath::Ftp { host, username, .. } => {
+                        cortex_core::vfs::VfsPath::Ftp { host, username, .. } => {
                             format!(" [FTP: {}@{}] [Filter: {}] ", username, host, filter)
                         }
                         _ => format!(" [Remote] [Filter: {}] ", filter),
@@ -123,8 +126,8 @@ impl UI {
         } else if panel.is_using_vfs() {
             if let Some(ref vfs_path) = panel.current_vfs_path {
                 match vfs_path {
-                    cortex_core::VfsPath::Archive { .. } => " [Archive] ".to_string(),
-                    cortex_core::VfsPath::Sftp {
+                    cortex_core::vfs::VfsPath::Archive { .. } => " [Archive] ".to_string(),
+                    cortex_core::vfs::VfsPath::Sftp {
                         host,
                         username,
                         path,
@@ -132,7 +135,7 @@ impl UI {
                     } => {
                         format!(" [SFTP: {}@{}:{}] ", username, host, path)
                     }
-                    cortex_core::VfsPath::Ftp {
+                    cortex_core::vfs::VfsPath::Ftp {
                         host,
                         username,
                         path,
@@ -197,7 +200,7 @@ impl UI {
 
                     let style =
                         Self::get_entry_style(entry, is_selected, is_marked, is_active, theme);
-                    let content = Self::format_entry(entry, inner_area.width as usize, &app.config_manager.get());
+                    let content = Self::format_entry(entry, inner_area.width as usize, panel, &app.config_manager.get());
 
                     ListItem::new(Line::from(vec![Span::styled(content, style)]))
                 })
@@ -235,7 +238,7 @@ impl UI {
         style
     }
 
-    fn format_entry(entry: &FileEntry, width: usize, config: &cortex_core::Config) -> String {
+    fn format_entry(entry: &FileEntry, width: usize, panel: &PanelState, config: &cortex_core::Config) -> String {
         let icon = if config.general.show_icons {
             match entry.file_type {
                 FileType::Directory => " ",
@@ -255,21 +258,25 @@ impl UI {
 
         let name_with_indicator = format!("{}{}{}", icon, entry.name, type_indicator);
         
-        // Build the info section based on configuration
+        // Build the info section based on view mode
         let mut info_parts = Vec::new();
         
-        if config.panels.show_size {
-            info_parts.push(entry.size_display.clone());
-        }
-        
-        if config.panels.show_permissions {
-            info_parts.push(entry.permissions.clone());
-        }
-        
-        if config.panels.show_modified {
-            if let Some(modified) = entry.modified {
-                // Format date as MM-DD HH:MM
-                info_parts.push(modified.format("%m-%d %H:%M").to_string());
+        match panel.view_mode {
+            ViewMode::Brief => {
+                // No info parts
+            }
+            ViewMode::Full => {
+                info_parts.push(entry.size_display.clone());
+                if let Some(modified) = entry.modified {
+                    info_parts.push(modified.format("%m-%d %H:%M").to_string());
+                }
+            }
+            ViewMode::Wide => {
+                info_parts.push(entry.size_display.clone());
+                info_parts.push(entry.permissions.clone());
+                if let Some(modified) = entry.modified {
+                    info_parts.push(modified.format("%m-%d %H:%M").to_string());
+                }
             }
         }
         
