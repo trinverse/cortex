@@ -326,8 +326,8 @@ impl ShortcutManager {
         shortcuts.insert(KeyBinding { code: "/".to_string(), modifiers: vec![] }, Action::QuickFilter);
         shortcuts.insert(KeyBinding { code: "l".to_string(), modifiers: vec!["Ctrl".to_string()] }, Action::ClearFilter);
         shortcuts.insert(KeyBinding { code: "g".to_string(), modifiers: vec!["Ctrl".to_string()] }, Action::GoToLine);
-        shortcuts.insert(KeyBinding { code: "F3".to_string(), modifiers: vec![] }, Action::SearchNext);
-        shortcuts.insert(KeyBinding { code: "n".to_string(), modifiers: vec!["Ctrl".to_string()] }, Action::SearchNext);
+        // Removed: shortcuts.insert(KeyBinding { code: "F3".to_string(), modifiers: vec![] }, Action::SearchNext); // Conflict with Action::ViewFile
+        // Removed: shortcuts.insert(KeyBinding { code: "n".to_string(), modifiers: vec!["Ctrl".to_string()] }, Action::SearchNext); // Conflict with Action::NewFile
         shortcuts.insert(KeyBinding { code: "n".to_string(), modifiers: vec!["Ctrl".to_string(), "Shift".to_string()] }, Action::SearchPrevious);
 
         // View Options
