@@ -376,7 +376,7 @@ impl ShortcutManager {
         shortcuts.insert(KeyBinding { code: "Space".to_string(), modifiers: vec!["Ctrl".to_string()] }, Action::Autocomplete);
 
         // Advanced Features
-        shortcuts.insert(KeyBinding { code: "PageDown".to_string(), modifiers: vec!["Ctrl".to_string()] }, Action::EnterArchive);
+        shortcuts.insert(KeyBinding { code: "PageDown".to_string(), modifiers: vec!["Alt".to_string()] }, Action::EnterArchive);
         shortcuts.insert(KeyBinding { code: "F6".to_string(), modifiers: vec!["Alt".to_string()] }, Action::ExtractArchive);
         shortcuts.insert(KeyBinding { code: "F5".to_string(), modifiers: vec!["Alt".to_string()] }, Action::CreateArchive);
         shortcuts.insert(KeyBinding { code: "s".to_string(), modifiers: vec!["Ctrl".to_string(), "Shift".to_string()] }, Action::SftpConnect);
