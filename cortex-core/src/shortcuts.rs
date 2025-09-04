@@ -308,7 +308,7 @@ impl ShortcutManager {
         shortcuts.insert(KeyBinding { code: "a".to_string(), modifiers: vec!["Ctrl".to_string()] }, Action::SelectAll);
         shortcuts.insert(KeyBinding { code: "u".to_string(), modifiers: vec!["Ctrl".to_string(), "Shift".to_string()] }, Action::SelectNone);
         shortcuts.insert(KeyBinding { code: "+".to_string(), modifiers: vec![] }, Action::SelectPattern);
-        shortcuts.insert(KeyBinding { code: "-".to_string(), modifiers: vec![] }, Action::DeselectPattern);
+        shortcuts.insert(KeyBinding { code: "-".to_string(), modifiers: vec![] }, Action::SelectNone);
         shortcuts.insert(KeyBinding { code: "*".to_string(), modifiers: vec![] }, Action::InvertSelection);
 
         // File Operations
