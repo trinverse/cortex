@@ -25,6 +25,8 @@ pub struct PanelState {
     pub view_offset: usize,
     pub show_hidden: bool,
     pub sort_mode: SortMode,
+    pub sort_order: SortOrder,
+    pub view_mode: ViewMode,
     pub marked_files: Vec<PathBuf>,
     pub filter: Option<String>,
     #[serde(skip)]
@@ -37,6 +39,19 @@ pub enum SortMode {
     Size,
     Modified,
     Extension,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum SortOrder {
+    Ascending,
+    Descending,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum ViewMode {
+    Brief,
+    Full,
+    Wide,
 }
 
 impl PanelState {
@@ -53,6 +68,8 @@ impl PanelState {
             view_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
+            sort_order: SortOrder::Ascending,
+            view_mode: ViewMode::Full,
             marked_files: Vec::new(),
             filter: None,
             git_info,
@@ -233,8 +250,7 @@ impl PanelState {
     pub fn sort_entries(&mut self) {
         use crate::fs::FileType;
 
-        // Sort main entries
-        self.entries.sort_by(|a, b| {
+        let sorter = |a: &FileEntry, b: &FileEntry| {
             if a.name == ".." {
                 return std::cmp::Ordering::Less;
             }
@@ -242,7 +258,7 @@ impl PanelState {
                 return std::cmp::Ordering::Greater;
             }
 
-            match (&a.file_type, &b.file_type) {
+            let order = match (&a.file_type, &b.file_type) {
                 (FileType::Directory, FileType::File) => std::cmp::Ordering::Less,
                 (FileType::File, FileType::Directory) => std::cmp::Ordering::Greater,
                 _ => match self.sort_mode {
@@ -257,36 +273,21 @@ impl PanelState {
                             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
                     }
                 },
+            };
+
+            if self.sort_order == SortOrder::Descending {
+                order.reverse()
+            } else {
+                order
             }
-        });
+        };
+
+        // Sort main entries
+        self.entries.sort_by(&sorter);
 
         // Also sort filtered entries if filter is active
         if self.filter.is_some() {
-            self.filtered_entries.sort_by(|a, b| {
-                if a.name == ".." {
-                    return std::cmp::Ordering::Less;
-                }
-                if b.name == ".." {
-                    return std::cmp::Ordering::Greater;
-                }
-
-                match (&a.file_type, &b.file_type) {
-                    (FileType::Directory, FileType::File) => std::cmp::Ordering::Less,
-                    (FileType::File, FileType::Directory) => std::cmp::Ordering::Greater,
-                    _ => match self.sort_mode {
-                        SortMode::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                        SortMode::Size => b.size.cmp(&a.size),
-                        SortMode::Modified => b.modified.cmp(&a.modified),
-                        SortMode::Extension => {
-                            let ext_a = a.extension.as_deref().unwrap_or("");
-                            let ext_b = b.extension.as_deref().unwrap_or("");
-                            ext_a
-                                .cmp(ext_b)
-                                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-                        }
-                    },
-                }
-            });
+            self.filtered_entries.sort_by(&sorter);
         }
     }
 }
@@ -295,6 +296,7 @@ pub struct AppState {
     pub left_panel: PanelState,
     pub right_panel: PanelState,
     pub active_panel: ActivePanel,
+    pub panels_hidden: bool,
     pub command_line: String,
     pub command_cursor: usize,
     pub command_history: Vec<String>,
@@ -327,6 +329,11 @@ pub enum FileOperation {
         sources: Vec<PathBuf>,
         destination: PathBuf,
     },
+    CopyAs {
+        source: PathBuf,
+        destination: PathBuf,
+        new_name: String,
+    },
     Move {
         sources: Vec<PathBuf>,
         destination: PathBuf,
@@ -343,6 +350,9 @@ pub enum FileOperation {
     CreateDir {
         path: PathBuf,
     },
+    CreateFile {
+        path: PathBuf,
+    },
     Rename {
         old_path: PathBuf,
         new_name: String,
@@ -352,6 +362,9 @@ pub enum FileOperation {
     },
     PasteFromClipboard {
         destination: PathBuf,
+    },
+    Filter {
+        filter: String,
     },
 }
 
@@ -489,6 +502,7 @@ impl AppState {
             left_panel: PanelState::new(current_dir.clone()),
             right_panel: PanelState::new(current_dir),
             active_panel: ActivePanel::Left,
+            panels_hidden: false,
             command_line: String::new(),
             command_cursor: 0,
             command_history: Vec::new(),

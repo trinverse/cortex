@@ -178,6 +178,15 @@ impl App {
                 // TODO: Implement clipboard paste
                 self.state.set_status_message("Clipboard paste not yet implemented");
             }
+            cortex_core::FileOperation::CopyAs { .. } => {
+                todo!()
+            }
+            cortex_core::FileOperation::CreateFile { .. } => {
+                todo!()
+            }
+            cortex_core::FileOperation::Filter { .. } => {
+                todo!()
+            }
         }
         
         // Refresh panels after operation

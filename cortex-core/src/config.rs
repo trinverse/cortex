@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -42,6 +43,8 @@ pub struct GeneralConfig {
     pub confirm_operations: bool,
     #[serde(default = "default_plugin_dir")]
     pub plugin_directory: String,
+    #[serde(default)]
+    pub quick_dirs: HashMap<u8, PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -231,6 +234,7 @@ impl Default for GeneralConfig {
             auto_reload: false,
             confirm_operations: true,
             plugin_directory: default_plugin_dir(),
+            quick_dirs: HashMap::new(),
         }
     }
 }

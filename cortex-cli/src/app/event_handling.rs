@@ -1,12 +1,16 @@
 use anyhow::Result;
-use cortex_core::FileOperation;
-use cortex_tui::{Event, Dialog};
-use crossterm::event::{KeyCode, KeyModifiers, KeyEvent};
+use cortex_core::{
+    shortcuts::Action,
+    state::{FileOperation, SortMode, SortOrder, ViewMode},
+    ActivePanel,
+};
+use cortex_tui::{Dialog, Event};
+use crossterm::event::{KeyCode, KeyEvent};
 use crossterm::{
-    execute,
-    style::{ResetColor},
-    terminal::{disable_raw_mode, Clear, ClearType, LeaveAlternateScreen},
     event::DisableMouseCapture,
+    execute,
+    style::ResetColor,
+    terminal::{disable_raw_mode, Clear, ClearType, LeaveAlternateScreen},
 };
 use std::io;
 
@@ -20,18 +24,11 @@ impl App {
                 Event::Key(key_event) => {
                     if self.context_menu.is_some() {
                         self.handle_context_menu_input(key_event).await?;
-                    } else if matches!(self.dialog, Some(Dialog::Suggestions(_))) {
-                        // Suggestions dialog is special - it doesn't block normal input
-                        if !self.handle_input(key_event).await? {
-                            return Ok(false);
-                        }
                     } else if self.dialog.is_some() {
-                        // Other dialogs block input
                         if !self.handle_dialog_input(key_event).await? {
                             return Ok(false);
                         }
                     } else {
-                        // Handle all input - typing goes to command line by default
                         if !self.handle_input(key_event).await? {
                             return Ok(false);
                         }
@@ -44,7 +41,6 @@ impl App {
                     self.terminal.autoresize()?;
                 }
                 Event::Tick => {
-                    // Update theme manager for random rotation
                     self.state.theme_manager.update();
                 }
             }
@@ -54,182 +50,278 @@ impl App {
 
     /// Handle input when no dialog is active
     async fn handle_input(&mut self, key: KeyEvent) -> Result<bool> {
-        // Handle suggestions dialog specially
-        if matches!(self.dialog, Some(Dialog::Suggestions(_))) {
+        if let Some(action) = self.shortcut_manager.get_action(key.code, key.modifiers) {
+            if !self.handle_action(action).await? {
+                return Ok(false);
+            }
+        } else {
             match key.code {
-                KeyCode::Up => {
-                    if let Some(Dialog::Suggestions(dialog)) = &mut self.dialog {
-                        dialog.move_up();
-                    }
-                    return Ok(true);
+                KeyCode::Char(c) => {
+                    self.state.command_line.insert(self.state.command_cursor, c);
+                    self.state.command_cursor += 1;
                 }
-                KeyCode::Down => {
-                    if let Some(Dialog::Suggestions(dialog)) = &mut self.dialog {
-                        dialog.move_down();
+                KeyCode::Backspace => {
+                    if self.state.command_cursor > 0 && !self.state.command_line.is_empty() {
+                        self.state.command_line.remove(self.state.command_cursor - 1);
+                        self.state.command_cursor -= 1;
                     }
-                    return Ok(true);
-                }
-                KeyCode::Enter => {
-                    if let Some(Dialog::Suggestions(dialog)) = &self.dialog {
-                        if let Some(suggestion) = dialog.get_selected_suggestion() {
-                            self.state.command_line = format!("cd {}", suggestion);
-                            self.state.command_cursor = self.state.command_line.len();
-                        }
-                    }
-                    self.dialog = None;
-                    self.suggestions_dismissed = false;
-                    return Ok(true);
                 }
                 KeyCode::Esc => {
-                    self.dialog = None;
-                    self.suggestions_dismissed = true;
-                    return Ok(true);
+                    self.state.command_line.clear();
+                    self.state.command_cursor = 0;
                 }
                 _ => {}
             }
         }
+        Ok(true)
+    }
 
-        // Global hotkeys
-        match (key.code, key.modifiers) {
-            // Exit application
-            (KeyCode::F(10), _) => {
-                return self.handle_exit().await;
-            }
-            
-            // Navigation keys - work on panels when command line is empty
-            (KeyCode::Up, modifiers) if modifiers.is_empty() && self.state.command_line.is_empty() => {
+    async fn handle_action(&mut self, action: Action) -> Result<bool> {
+        match action {
+            // Navigation
+            Action::NavigateUp => {
                 let panel = self.state.active_panel_mut();
                 panel.move_selection_up();
                 if let Ok(size) = self.terminal.size() {
                     panel.update_view_offset(size.height as usize - 5);
                 }
             }
-            (KeyCode::Down, modifiers) if modifiers.is_empty() && self.state.command_line.is_empty() => {
+            Action::NavigateDown => {
                 let panel = self.state.active_panel_mut();
                 panel.move_selection_down();
                 if let Ok(size) = self.terminal.size() {
                     panel.update_view_offset(size.height as usize - 5);
                 }
             }
-            (KeyCode::Left, modifiers) if modifiers.is_empty() && self.state.command_line.is_empty() => {
+            Action::NavigateToParent => {
                 let current_dir = self.state.active_panel().current_dir.clone();
                 if let Some(parent) = current_dir.parent() {
                     let _ = self.navigate_to_directory(parent.to_path_buf());
                 }
             }
-            (KeyCode::Right, modifiers) if modifiers.is_empty() && self.state.command_line.is_empty() => {
+            Action::NavigateInto => {
                 let current_entry = self.state.active_panel().current_entry().cloned();
                 if let Some(entry) = current_entry {
-                    if entry.file_type == cortex_core::FileType::Directory && entry.name != ".." {
-                        let _ = self.navigate_to_directory(entry.path);
+                    if entry.file_type == cortex_core::fs::FileType::Directory {
+                        if entry.name == ".." {
+                            let current_dir = self.state.active_panel().current_dir.clone();
+                            if let Some(parent) = current_dir.parent() {
+                                let _ = self.navigate_to_directory(parent.to_path_buf());
+                            }
+                        } else {
+                            let _ = self.navigate_to_directory(entry.path);
+                        }
                     }
                 }
             }
-
-            // Panel switching
-            (KeyCode::Tab, _) if self.state.command_line.is_empty() => {
-                // Toggle active panel
-                match self.state.active_panel {
-                    cortex_core::ActivePanel::Left => {
-                        self.state.active_panel = cortex_core::ActivePanel::Right;
-                    }
-                    cortex_core::ActivePanel::Right => {
-                        self.state.active_panel = cortex_core::ActivePanel::Left;
-                    }
+            Action::SwitchPanel => {
+                self.state.active_panel = match self.state.active_panel {
+                    ActivePanel::Left => ActivePanel::Right,
+                    ActivePanel::Right => ActivePanel::Left,
                 }
             }
 
-            // File operations
-            (KeyCode::F(5), _) => {
-                self.handle_copy_operation().await?;
+            // File Operations
+            Action::Copy => self.handle_copy_operation().await?,
+            Action::CopyAs => self.handle_copy_as_operation().await?,
+            Action::Move => self.handle_move_operation().await?,
+            Action::Delete => self.handle_delete_operation().await?,
+            Action::CreateDirectory => self.handle_create_directory_operation().await?,
+            Action::Rename => self.handle_rename_operation().await?,
+            Action::NewFile => self.handle_new_file_operation().await?,
+
+            // Sorting
+            Action::SortByName => {
+                let panel = self.state.active_panel_mut();
+                panel.sort_mode = SortMode::Name;
+                panel.sort_entries();
+                self.refresh_needed = true;
             }
-            (KeyCode::F(6), _) => {
-                self.handle_move_operation().await?;
+            Action::SortByExtension => {
+                let panel = self.state.active_panel_mut();
+                panel.sort_mode = SortMode::Extension;
+                panel.sort_entries();
+                self.refresh_needed = true;
             }
-            (KeyCode::F(7), _) => {
-                self.handle_create_directory_operation().await?;
+            Action::SortByDate => {
+                let panel = self.state.active_panel_mut();
+                panel.sort_mode = SortMode::Modified;
+                panel.sort_entries();
+                self.refresh_needed = true;
             }
-            (KeyCode::F(8), _) => {
-                self.handle_delete_operation().await?;
+            Action::SortBySize => {
+                let panel = self.state.active_panel_mut();
+                panel.sort_mode = SortMode::Size;
+                panel.sort_entries();
+                self.refresh_needed = true;
             }
-            (KeyCode::F(9), _) => {
-                // F9 - Configuration dialog
+            Action::ReverseSort => {
+                let panel = self.state.active_panel_mut();
+                panel.sort_order = match panel.sort_order {
+                    SortOrder::Ascending => SortOrder::Descending,
+                    SortOrder::Descending => SortOrder::Ascending,
+                };
+                panel.sort_entries();
+                self.refresh_needed = true;
+            }
+
+            // View
+            Action::QuickFilter => self.handle_quick_filter_operation().await?,
+            Action::FindInFiles => {
+                self.state.set_status_message("Find in files not yet implemented");
+            }
+            Action::GoToLine => {
+                self.state.set_status_message("Go to line not yet implemented");
+            }
+            Action::ToggleTreeView => {
+                self.state.set_status_message("Tree view not yet implemented");
+            }
+            Action::BriefView => {
+                self.state.active_panel_mut().view_mode = ViewMode::Brief;
+                self.refresh_needed = true;
+            }
+            Action::FullView => {
+                self.state.active_panel_mut().view_mode = ViewMode::Full;
+                self.refresh_needed = true;
+            }
+            Action::WideView => {
+                self.state.active_panel_mut().view_mode = ViewMode::Wide;
+                self.refresh_needed = true;
+            }
+
+            // Panel Management
+            Action::FocusLeftPanel => {
+                self.state.active_panel = ActivePanel::Left;
+            }
+            Action::FocusRightPanel => {
+                self.state.active_panel = ActivePanel::Right;
+            }
+            Action::HidePanels => {
+                self.state.panels_hidden = !self.state.panels_hidden;
+            }
+            Action::PanelMenu => {
+                self.state.set_status_message("Panel menu not yet implemented");
+            }
+            Action::TreePanel => {
+                self.state.set_status_message("Tree panel not yet implemented");
+            }
+            Action::ChangeDriveLeft => {
+                self.state.set_status_message("Change drive not yet implemented");
+            }
+            Action::ChangeDriveRight => {
+                self.state.set_status_message("Change drive not yet implemented");
+            }
+
+            // Bookmarks and Quick Directories
+            Action::SetQuickDir(n) => {
+                let path = self.state.active_panel().current_dir.clone();
+                self.state.config_manager.update(|config| {
+                    config.general.quick_dirs.insert(n, path);
+                })?;
+                self.state.set_status_message(format!("Quick directory {} set", n));
+            }
+            Action::ManageBookmarks => {
+                self.state.set_status_message("Bookmark management not yet implemented");
+            }
+
+            // Advanced Features
+            Action::EnterArchive => {
+                self.state.set_status_message("Entering archives not yet implemented");
+            }
+            Action::ExtractArchive => {
+                self.state.set_status_message("Extracting archives not yet implemented");
+            }
+            Action::CreateArchive => {
+                self.state.set_status_message("Creating archives not yet implemented");
+            }
+            Action::SftpConnect => {
+                self.state.set_status_message("SFTP connection not yet implemented");
+            }
+            Action::FtpConnect => {
+                self.state.set_status_message("FTP connection not yet implemented");
+            }
+            Action::Disconnect => {
+                self.state.set_status_message("Disconnect not yet implemented");
+            }
+            Action::CompareDirs => {
+                self.state.set_status_message("Directory comparison not yet implemented");
+            }
+            Action::CalculateSize => {
+                self.state.set_status_message("Directory size calculation not yet implemented");
+            }
+            Action::Properties => {
+                self.state.set_status_message("File properties not yet implemented");
+            }
+
+            // Selection
+            Action::SelectItem => {
+                self.state.active_panel_mut().toggle_mark_current();
+            }
+            Action::SelectAll => self.mark_all_files(),
+            Action::SelectNone => self.unmark_all_files(),
+
+            // System
+            Action::ShowShortcuts => {
+                self.state.set_status_message("Show shortcuts not yet implemented");
+            }
+            Action::ToggleFullscreen => {
+                self.state.set_status_message("Toggle fullscreen not yet implemented");
+            }
+            Action::OpenSystemTerminal => {
+                self.state.set_status_message("Open system terminal not yet implemented");
+            }
+            Action::ContextHelp => {
+                self.state.set_status_message("Context help not yet implemented");
+            }
+            Action::About => {
+                self.state.set_status_message("About not yet implemented");
+            }
+            // Macros
+            Action::StartMacroRecord => {
+                self.state.set_status_message("Macro recording not yet implemented");
+            }
+            Action::PlayMacro => {
+                self.state.set_status_message("Macro playback not yet implemented");
+            }
+            Action::ManageMacros => {
+                self.state.set_status_message("Macro management not yet implemented");
+            }
+            Action::Quit | Action::QuickExit => return self.handle_exit().await,
+            Action::Settings => {
                 let config = self.state.config_manager.get();
                 self.dialog = Some(Dialog::Config(cortex_tui::ConfigDialog::new(
                     config,
                     &self.state.theme_manager,
                 )));
             }
-
-            // Special keys with Ctrl
-            (KeyCode::Char('h'), KeyModifiers::CONTROL) => {
-                // Toggle hidden files
-                {
-                    let panel = self.state.active_panel_mut();
-                    panel.show_hidden = !panel.show_hidden;
-                }
-                // Refresh after toggling
-                let mut active_panel = self.state.active_panel().clone();
-                self.refresh_panel_with_cache(&mut active_panel)?;
-                *self.state.active_panel_mut() = active_panel;
-            }
-            (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
-                self.mark_all_files();
-            }
-            (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-                if !self.state.command_line.is_empty() {
-                    self.state.command_line.clear();
-                    self.state.command_cursor = 0;
-                } else {
-                    self.unmark_all_files();
-                }
+            Action::Help => {
+                self.dialog = Some(Dialog::Help(cortex_tui::HelpDialog::new()));
             }
 
-            // Command line handling
-            (KeyCode::Char(c), _) => {
-                self.state.command_line.insert(self.state.command_cursor, c);
-                self.state.command_cursor += 1;
+            // Command Line
+            Action::ShellCommand => {
+                self.state.set_status_message("Shell command not yet implemented");
             }
-            (KeyCode::Backspace, _) => {
-                if self.state.command_cursor > 0 && !self.state.command_line.is_empty() {
-                    self.state.command_line.remove(self.state.command_cursor - 1);
-                    self.state.command_cursor -= 1;
-                }
+            Action::RunInTerminal => {
+                self.state.set_status_message("Run in terminal not yet implemented");
             }
-            (KeyCode::Enter, _) => {
+            Action::Autocomplete => {
+                self.state.set_status_message("Autocomplete not yet implemented");
+            }
+            Action::CommandLine => {
+                // This might be used to focus the command line, which is the default
+            }
+            Action::ExecuteCommand => {
                 if !self.state.command_line.is_empty() {
                     return self.handle_command_execution().await;
-                } else {
-                    // Enter on empty command line navigates directories (like Right arrow)
-                    let current_entry = self.state.active_panel().current_entry().cloned();
-                    if let Some(entry) = current_entry {
-                        if entry.file_type == cortex_core::FileType::Directory {
-                            if entry.name == ".." {
-                                // Navigate to parent directory
-                                let current_dir = self.state.active_panel().current_dir.clone();
-                                if let Some(parent) = current_dir.parent() {
-                                    let _ = self.navigate_to_directory(parent.to_path_buf());
-                                }
-                            } else {
-                                // Navigate into subdirectory
-                                let _ = self.navigate_to_directory(entry.path);
-                            }
-                        }
-                    }
-                }
-            }
-            (KeyCode::Esc, _) => {
-                self.state.command_line.clear();
-                self.state.command_cursor = 0;
-                self.suggestions_dismissed = true;
-                if matches!(self.dialog, Some(Dialog::Suggestions(_))) {
-                    self.dialog = None;
                 }
             }
 
-            _ => {}
+            _ => {
+                // TODO: Implement all other actions
+                self.state.set_status_message(format!("Action not yet implemented: {:?}", action));
+            }
         }
-
         Ok(true)
     }
 
@@ -277,12 +369,40 @@ impl App {
                         dialog.move_cursor_right();
                     }
                     KeyCode::Enter => {
-                        // Handle dialog submission
-                        if let Some(cortex_core::FileOperation::CreateDir { path }) = &self.state.pending_operation {
-                            let new_operation = cortex_core::FileOperation::CreateDir {
-                                path: path.join(&dialog.value),
-                            };
-                            self.execute_operation(new_operation).await?;
+                        if let Some(op) = self.state.pending_operation.take() {
+                            match op {
+                                FileOperation::CreateDir { path } => {
+                                    let new_operation = FileOperation::CreateDir {
+                                        path: path.join(&dialog.value),
+                                    };
+                                    self.execute_operation(new_operation).await?;
+                                }
+                                FileOperation::CreateFile { path } => {
+                                    let new_operation = FileOperation::CreateFile {
+                                        path: path.join(&dialog.value),
+                                    };
+                                    self.execute_operation(new_operation).await?;
+                                }
+                                FileOperation::Rename { old_path, .. } => {
+                                    let new_operation = FileOperation::Rename {
+                                        old_path,
+                                        new_name: dialog.value.clone(),
+                                    };
+                                    self.execute_operation(new_operation).await?;
+                                }
+                                FileOperation::CopyAs { source, destination, .. } => {
+                                    let new_operation = FileOperation::CopyAs {
+                                        source,
+                                        destination,
+                                        new_name: dialog.value.clone(),
+                                    };
+                                    self.execute_operation(new_operation).await?;
+                                }
+                                FileOperation::Filter { .. } => {
+                                    self.state.active_panel_mut().apply_filter(&dialog.value);
+                                }
+                                _ => {}
+                            }
                         }
                         self.dialog = None;
                     }
@@ -554,8 +674,60 @@ impl App {
         self.dialog = Some(Dialog::Input(
             cortex_tui::InputDialog::new("Create Directory", "Enter directory name:")
         ));
-        self.state.pending_operation = Some(cortex_core::FileOperation::CreateDir {
+        self.state.pending_operation = Some(FileOperation::CreateDir {
             path: self.state.active_panel().current_dir.clone(),
+        });
+        Ok(())
+    }
+
+    async fn handle_new_file_operation(&mut self) -> Result<()> {
+        self.dialog = Some(Dialog::Input(
+            cortex_tui::InputDialog::new("Create File", "Enter file name:")
+        ));
+        self.state.pending_operation = Some(FileOperation::CreateFile {
+            path: self.state.active_panel().current_dir.clone(),
+        });
+        Ok(())
+    }
+
+    async fn handle_rename_operation(&mut self) -> Result<()> {
+        if let Some(entry) = self.state.active_panel().current_entry().cloned() {
+            if entry.name != ".." {
+                self.dialog = Some(Dialog::Input(
+                    cortex_tui::InputDialog::new("Rename", "Enter new name:").with_initial_value(&entry.name),
+                ));
+                self.state.pending_operation = Some(FileOperation::Rename {
+                    old_path: entry.path,
+                    new_name: String::new(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_copy_as_operation(&mut self) -> Result<()> {
+        if let Some(entry) = self.state.active_panel().current_entry().cloned() {
+            if entry.name != ".." {
+                self.dialog = Some(Dialog::Input(
+                    cortex_tui::InputDialog::new("Copy As", "Enter new name:").with_initial_value(&entry.name),
+                ));
+                let destination = self.state.inactive_panel().current_dir.clone();
+                self.state.pending_operation = Some(FileOperation::CopyAs {
+                    source: entry.path,
+                    destination,
+                    new_name: String::new(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_quick_filter_operation(&mut self) -> Result<()> {
+        self.dialog = Some(Dialog::Input(
+            cortex_tui::InputDialog::new("Quick Filter", "Enter filter string:")
+        ));
+        self.state.pending_operation = Some(FileOperation::Filter {
+            filter: String::new(),
         });
         Ok(())
     }

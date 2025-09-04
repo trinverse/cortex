@@ -1,5 +1,5 @@
 use anyhow::Result;
-use cortex_core::{AppState, Theme};
+use cortex_core::{AppState, Theme, shortcuts::ShortcutManager};
 use cortex_tui::{EventHandler, MouseHandler, MouseRegionManager, NotificationManager};
 use crossterm::{
     event::{EnableMouseCapture},
@@ -60,6 +60,7 @@ impl App {
             state,
             terminal,
             events: EventHandler::new(Duration::from_millis(100)),
+            shortcut_manager: ShortcutManager::new(),
             dialog: None,
             pending_editor: None,
             pending_config_dialog: None,

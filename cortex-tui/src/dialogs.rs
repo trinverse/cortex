@@ -162,6 +162,12 @@ impl InputDialog {
         }
     }
 
+    pub fn with_initial_value(mut self, value: &str) -> Self {
+        self.value = value.to_string();
+        self.cursor_position = self.value.len();
+        self
+    }
+
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
         self.value = value.into();
         self.cursor_position = self.value.len();
