@@ -80,7 +80,7 @@ impl SearchDialog {
     }
 
     fn render_setup(&self, frame: &mut Frame) {
-        let area = centered_rect(70, 60, frame.area());
+        let area = centered_rect(70, 60, frame.size());
         frame.render_widget(Clear, area);
 
         let block = Block::default()
@@ -231,7 +231,7 @@ impl SearchDialog {
     }
 
     fn render_searching(&self, frame: &mut Frame) {
-        let area = centered_rect(60, 30, frame.area());
+        let area = centered_rect(60, 30, frame.size());
         frame.render_widget(Clear, area);
 
         let block = Block::default()
@@ -291,7 +291,7 @@ impl SearchDialog {
     }
 
     fn render_results(&self, frame: &mut Frame) {
-        let area = centered_rect(90, 80, frame.area());
+        let area = centered_rect(90, 80, frame.size());
         frame.render_widget(Clear, area);
 
         let block = Block::default()

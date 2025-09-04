@@ -1,4 +1,5 @@
 use crate::ai_chat_dialog::AIChatDialog;
+use crate::api_key_dialog::APIKeyDialog;
 use crate::command_palette_dialog::CommandPaletteDialog;
 use crate::config_dialog::ConfigDialog;
 use crate::connection_dialog::ConnectionDialog;
@@ -34,6 +35,7 @@ pub enum Dialog {
     ThemeSelection(ThemeSelectionDialog),
     Suggestions(SuggestionsDialog),
     AIChat(AIChatDialog),
+    APIKey(APIKeyDialog),
 }
 
 #[derive(Debug, Clone)]
@@ -160,6 +162,12 @@ impl InputDialog {
         }
     }
 
+    pub fn with_initial_value(mut self, value: &str) -> Self {
+        self.value = value.to_string();
+        self.cursor_position = self.value.len();
+        self
+    }
+
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
         self.value = value.into();
         self.cursor_position = self.value.len();
@@ -278,8 +286,8 @@ impl HelpDialog {
             ("F6".to_string(), "Move/rename files".to_string()),
             ("F7".to_string(), "Create directory".to_string()),
             ("F8".to_string(), "Delete files".to_string()),
-            ("F9".to_string(), "Next theme".to_string()),
-            ("F10".to_string(), "Toggle random theme".to_string()),
+            ("F9".to_string(), "Config".to_string()),
+            ("F10".to_string(), "Quit application".to_string()),
             ("Space".to_string(), "Mark/unmark file".to_string()),
             ("Ctrl+A".to_string(), "Mark all".to_string()),
             ("Ctrl+U".to_string(), "Unmark all".to_string()),
@@ -292,7 +300,7 @@ impl HelpDialog {
             ("Alt+4".to_string(), "Sort by extension".to_string()),
             ("".to_string(), "".to_string()),
             ("Other".to_string(), "".to_string()),
-            ("F1".to_string(), "This help".to_string()),
+            ("Ctrl+K".to_string(), "API Key Configuration".to_string()),
             ("Ctrl+O / :".to_string(), "Command mode".to_string()),
             ("Ctrl+R".to_string(), "Refresh panels".to_string()),
             ("Ctrl+Q".to_string(), "Quit".to_string()),
@@ -331,19 +339,19 @@ impl HelpDialog {
 pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog, theme: &cortex_core::Theme) {
     match dialog {
         Dialog::Confirm(d) => {
-            let area = centered_rect(60, 20, frame.area());
+            let area = centered_rect(60, 20, frame.size());
             render_confirm_dialog(frame, area, d)
         }
         Dialog::Input(d) => {
-            let area = centered_rect(60, 20, frame.area());
+            let area = centered_rect(60, 20, frame.size());
             render_input_dialog(frame, area, d)
         }
         Dialog::Progress(d) => {
-            let area = centered_rect(60, 20, frame.area());
+            let area = centered_rect(60, 20, frame.size());
             render_progress_dialog(frame, area, d)
         }
         Dialog::Error(d) => {
-            let area = centered_rect(60, 20, frame.area());
+            let area = centered_rect(60, 20, frame.size());
             render_error_dialog(frame, area, d)
         }
         Dialog::Help(d) => render_help_dialog(frame, d),
@@ -354,13 +362,13 @@ pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog, theme: &cortex_core
         Dialog::Search(d) => d.render(frame),
         Dialog::Connection(d) => d.render(frame),
         Dialog::Plugin(d) => d.render(frame),
-        Dialog::Config(d) => d.render(frame),
+        Dialog::Config(d) => d.render(frame, theme),
         Dialog::SaveConfirm(d) => {
-            let area = centered_rect(60, 20, frame.area());
+            let area = centered_rect(60, 20, frame.size());
             render_save_confirm_dialog(frame, area, d)
         }
         Dialog::ThemeSelection(d) => {
-            let area = centered_rect(50, 30, frame.area());
+            let area = centered_rect(50, 30, frame.size());
             render_theme_selection_dialog(frame, area, d)
         }
         Dialog::Suggestions(d) => {
@@ -368,6 +376,10 @@ pub fn render_dialog(frame: &mut Frame, dialog: &mut Dialog, theme: &cortex_core
         }
         Dialog::AIChat(d) => {
             crate::ai_chat_dialog::draw_ai_chat_dialog(frame, d, theme)
+        }
+        Dialog::APIKey(d) => {
+            let area = frame.size();
+            d.render(frame, area)
         }
     }
 }
@@ -441,7 +453,7 @@ fn render_input_dialog(frame: &mut Frame, area: Rect, dialog: &InputDialog) {
     let input = Paragraph::new(dialog.value.as_str());
     frame.render_widget(input, input_inner);
 
-    frame.set_cursor_position((input_inner.x + dialog.cursor_position as u16, input_inner.y));
+    frame.set_cursor(input_inner.x + dialog.cursor_position as u16, input_inner.y);
 }
 
 fn render_progress_dialog(frame: &mut Frame, area: Rect, dialog: &ProgressDialog) {
@@ -628,7 +640,7 @@ fn render_save_confirm_dialog(frame: &mut Frame, area: Rect, dialog: &SaveConfir
 }
 
 fn render_help_dialog(frame: &mut Frame, dialog: &HelpDialog) {
-    let area = centered_rect(70, 80, frame.area());
+    let area = centered_rect(70, 80, frame.size());
     frame.render_widget(Clear, area);
 
     let block = Block::default()
@@ -773,7 +785,7 @@ impl SuggestionsDialog {
 
 fn draw_suggestions_dialog(frame: &mut Frame, dialog: &SuggestionsDialog, theme: &cortex_core::Theme) {
     // Position the dialog as a small overlay near the command line
-    let area = frame.area();
+    let area = frame.size();
     let suggestion_count = dialog.suggestions.len().min(5);
     let popup_area = Rect {
         x: area.x + 2,

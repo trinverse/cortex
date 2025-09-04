@@ -32,6 +32,11 @@ Cargo.lock
 # Config files (user-specific)
 /config.toml
 
+# Environment variables (contains secrets)
+.env
+.env.local
+.env.production
+
 # Plugin development
 /plugins/dev/
 

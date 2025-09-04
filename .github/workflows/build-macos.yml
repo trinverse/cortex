@@ -6,7 +6,7 @@ on:
       release_tag:
         description: 'Release tag to upload to'
         required: true
-        default: 'v0.1.0'
+        default: 'v0.1.1'
 
 jobs:
   build-macos:
@@ -17,7 +17,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable

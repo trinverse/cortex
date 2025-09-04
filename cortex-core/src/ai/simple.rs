@@ -47,23 +47,23 @@ impl SimpleAIProvider {
              WARNING: This operation cannot be undone!".to_string()
         } else if prompt_lower.contains("search") || prompt_lower.contains("find") {
             "To search for files:\n\
-             1. Press /find or Ctrl+F\n\
+             1. Press Ctrl+F for search\n\
              2. Enter your search pattern\n\
              3. Use wildcards like *.txt\n\
              4. Navigate results with arrow keys".to_string()
         } else if prompt_lower.contains("organize") {
             "Here's a suggestion to organize your files:\n\
              1. Create folders by categories (Documents, Images, Code)\n\
-             2. Use /mkdir to create new directories\n\
+             2. Create new directories as needed\n\
              3. Select and move files to appropriate folders\n\
              4. Consider using date-based organization for archives".to_string()
         } else if prompt_lower.contains("help") {
             "Cortex AI Assistant can help you with:\n\
-             - File operations (copy, move, delete)\n\
              - Directory navigation\n\
              - File organization strategies\n\
              - Search and filter operations\n\
              - Keyboard shortcuts\n\
+             - General file management advice\n\
              \n\
              Just ask me what you'd like to do!".to_string()
         } else {
@@ -71,8 +71,7 @@ impl SimpleAIProvider {
                     \n\
                     While I'm still learning, here are some things you can try:\n\
                     - Use arrow keys to navigate\n\
-                    - Press F1 for help\n\
-                    - Type /help for command list\n\
+                    - Press : to enter command mode\n\
                     - Press Tab to switch between panels", prompt)
         }
     }

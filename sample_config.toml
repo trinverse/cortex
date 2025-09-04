@@ -9,7 +9,6 @@ terminal = "bash"               # Default terminal for command execution
 editor = "vim"                  # Default text editor
 auto_reload = true              # Automatically reload panels when files change
 confirm_operations = true       # Ask for confirmation for file operations
-enable_sound = false            # Enable sound notifications (not yet implemented) 
 plugin_directory = "plugins"    # Directory to load plugins from
 
 [panels]

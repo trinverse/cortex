@@ -5,6 +5,7 @@ use winit::{
     event::{Event, WindowEvent as WinitWindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
+    keyboard::{PhysicalKey, Key},
 };
 use std::sync::Arc;
 use std::thread;
@@ -38,7 +39,7 @@ pub enum WindowEvent {
     Resize(u32, u32),
     Close,
     KeyPress(char),
-    KeyDown(winit::event::VirtualKeyCode),
+    KeyDown(PhysicalKey),
     MouseMove(f64, f64),
     MouseClick(f64, f64, MouseButton),
     MouseScroll(f64, f64),
@@ -50,6 +51,7 @@ pub enum MouseButton {
     Left,
     Right,
     Middle,
+    Other,
 }
 
 pub struct WindowManager {
@@ -78,7 +80,7 @@ impl WindowManager {
             return Err(anyhow::anyhow!("Cannot create window in terminal mode"));
         }
         
-        let event_loop = EventLoop::new();
+        let event_loop = EventLoop::new()?;
         let window = WindowBuilder::new()
             .with_title(&self.config.title)
             .with_inner_size(LogicalSize::new(self.config.width, self.config.height))
@@ -93,6 +95,81 @@ impl WindowManager {
         Ok(window_arc)
     }
     
+    pub fn run_event_loop_with_renderer<F>(mut self, mut render_callback: F) -> Result<()>
+    where
+        F: FnMut() + 'static,
+    {
+        let event_loop = self.event_loop
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("No event loop created"))?;
+        
+        let window = self.window_handle
+            .ok_or_else(|| anyhow::anyhow!("No window created"))?;
+        
+        let event_tx = self.event_tx.clone()
+            .ok_or_else(|| anyhow::anyhow!("No event sender"))?;
+        
+        event_loop.run(move |event, elwt| {
+            elwt.set_control_flow(ControlFlow::Wait);
+            
+            match event {
+                Event::WindowEvent { event, window_id } if window_id == window.id() => {
+                    match event {
+                        WinitWindowEvent::CloseRequested => {
+                            let _ = event_tx.send(WindowEvent::Close);
+                            elwt.exit();
+                        }
+                        WinitWindowEvent::Resized(size) => {
+                            let _ = event_tx.send(WindowEvent::Resize(size.width, size.height));
+                        }
+                        WinitWindowEvent::KeyboardInput { event, .. } => {
+                            let _ = event_tx.send(WindowEvent::KeyDown(event.physical_key.clone()));
+                            
+                            if let Key::Character(text) = &event.logical_key {
+                                if let Some(c) = text.chars().next() {
+                                    if !c.is_control() {
+                                        let _ = event_tx.send(WindowEvent::KeyPress(c));
+                                    }
+                                }
+                            }
+                            // Request redraw on keyboard input
+                            window.request_redraw();
+                        }
+                        WinitWindowEvent::CursorMoved { position, .. } => {
+                            let _ = event_tx.send(WindowEvent::MouseMove(position.x, position.y));
+                        }
+                        WinitWindowEvent::MouseInput { button, state, .. } => {
+                            if state == winit::event::ElementState::Pressed {
+                                let btn = match button {
+                                    winit::event::MouseButton::Left => MouseButton::Left,
+                                    winit::event::MouseButton::Right => MouseButton::Right,
+                                    winit::event::MouseButton::Middle => MouseButton::Middle,
+                                    _ => MouseButton::Other,
+                                };
+                                let _ = event_tx.send(WindowEvent::MouseClick(0.0, 0.0, btn));
+                            }
+                        }
+                        WinitWindowEvent::MouseWheel { delta, .. } => {
+                            if let winit::event::MouseScrollDelta::LineDelta(x, y) = delta {
+                                let _ = event_tx.send(WindowEvent::MouseScroll(x as f64, y as f64));
+                            }
+                        }
+                        WinitWindowEvent::RedrawRequested => {
+                            render_callback();
+                            let _ = event_tx.send(WindowEvent::Redraw);
+                        }
+                        _ => {}
+                    }
+                }
+                Event::AboutToWait => {
+                    // Only request redraw occasionally to avoid spam
+                    // The RedrawRequested event will handle actual rendering
+                }
+                _ => {}
+            }
+        }).map_err(|e| anyhow::anyhow!("Event loop error: {:?}", e))
+    }
+
     pub fn run_event_loop(mut self) -> Result<()> {
         let event_loop = self.event_loop
             .take()
@@ -104,28 +181,31 @@ impl WindowManager {
         let event_tx = self.event_tx.clone()
             .ok_or_else(|| anyhow::anyhow!("No event sender"))?;
         
-        event_loop.run(move |event, _, control_flow| {
-            *control_flow = ControlFlow::Poll;
+        event_loop.run(move |event, elwt| {
+            elwt.set_control_flow(ControlFlow::Wait);
             
             match event {
                 Event::WindowEvent { event, window_id } if window_id == window.id() => {
                     match event {
                         WinitWindowEvent::CloseRequested => {
                             let _ = event_tx.send(WindowEvent::Close);
-                            *control_flow = ControlFlow::Exit;
+                            elwt.exit();
                         }
                         WinitWindowEvent::Resized(size) => {
                             let _ = event_tx.send(WindowEvent::Resize(size.width, size.height));
                         }
-                        WinitWindowEvent::KeyboardInput { input, .. } => {
-                            if let Some(keycode) = input.virtual_keycode {
-                                let _ = event_tx.send(WindowEvent::KeyDown(keycode));
+                        WinitWindowEvent::KeyboardInput { event, .. } => {
+                            let _ = event_tx.send(WindowEvent::KeyDown(event.physical_key.clone()));
+                            
+                            if let Key::Character(text) = &event.logical_key {
+                                if let Some(c) = text.chars().next() {
+                                    if !c.is_control() {
+                                        let _ = event_tx.send(WindowEvent::KeyPress(c));
+                                    }
+                                }
                             }
-                        }
-                        WinitWindowEvent::ReceivedCharacter(c) => {
-                            if !c.is_control() {
-                                let _ = event_tx.send(WindowEvent::KeyPress(c));
-                            }
+                            // Request redraw on keyboard input
+                            window.request_redraw();
                         }
                         WinitWindowEvent::CursorMoved { position, .. } => {
                             let _ = event_tx.send(WindowEvent::MouseMove(position.x, position.y));
@@ -147,18 +227,20 @@ impl WindowManager {
                                 let _ = event_tx.send(WindowEvent::MouseScroll(x as f64, y as f64));
                             }
                         }
+                        WinitWindowEvent::RedrawRequested => {
+                            let _ = event_tx.send(WindowEvent::Redraw);
+                        }
                         _ => {}
                     }
                 }
-                Event::MainEventsCleared => {
-                    window.request_redraw();
-                }
-                Event::RedrawRequested(_) => {
-                    let _ = event_tx.send(WindowEvent::Redraw);
+                Event::AboutToWait => {
+                    // Only request redraw occasionally to avoid spam
+                    // The RedrawRequested event will handle actual rendering
                 }
                 _ => {}
             }
-        });
+        })
+        .map_err(|e| anyhow::anyhow!("Event loop error: {}", e))
     }
     
     pub fn spawn_window_thread(config: WindowConfig) -> Result<mpsc::UnboundedReceiver<WindowEvent>> {

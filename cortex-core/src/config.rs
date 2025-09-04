@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -24,6 +25,8 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfig {
+    #[serde(default = "default_theme")]
+    pub theme: String,
     #[serde(default = "default_false")]
     pub show_hidden: bool,
     #[serde(default = "default_true")]
@@ -38,10 +41,10 @@ pub struct GeneralConfig {
     pub auto_reload: bool,
     #[serde(default = "default_true")]
     pub confirm_operations: bool,
-    #[serde(default = "default_false")]
-    pub enable_sound: bool,
     #[serde(default = "default_plugin_dir")]
     pub plugin_directory: String,
+    #[serde(default)]
+    pub quick_dirs: HashMap<u8, PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,6 +189,8 @@ pub struct CloudConfig {
     pub openai_api_key: Option<String>,
     #[serde(default)]
     pub anthropic_api_key: Option<String>,
+    #[serde(default)]
+    pub gemini_api_key: Option<String>,
     #[serde(default = "default_cloud_model")]
     pub default_model: String,
     #[serde(default = "default_max_monthly_cost")]
@@ -210,6 +215,7 @@ impl Default for CloudConfig {
             groq_api_key: None,
             openai_api_key: None,
             anthropic_api_key: None,
+            gemini_api_key: None,
             default_model: default_cloud_model(),
             max_monthly_cost: default_max_monthly_cost(),
         }
@@ -219,6 +225,7 @@ impl Default for CloudConfig {
 impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
+            theme: default_theme(),
             show_hidden: false,
             confirm_delete: true,
             show_icons: false,
@@ -226,8 +233,8 @@ impl Default for GeneralConfig {
             editor: default_editor(),
             auto_reload: false,
             confirm_operations: true,
-            enable_sound: false,
             plugin_directory: default_plugin_dir(),
+            quick_dirs: HashMap::new(),
         }
     }
 }
@@ -282,6 +289,9 @@ fn default_true() -> bool {
 }
 fn default_false() -> bool {
     false
+}
+fn default_theme() -> String {
+    "default".to_string()
 }
 fn default_terminal() -> String {
     "bash".to_string()
@@ -412,7 +422,30 @@ impl ConfigManager {
         Ok(())
     }
 
-    pub fn watch_for_changes(&self) -> Result<()> {
+    pub fn set_api_key(&self, provider: &str, api_key: String) -> Result<()> {
+        self.update(|config| {
+            match provider {
+                "groq" | "Groq" => config.ai.cloud.groq_api_key = Some(api_key),
+                "openai" | "OpenAI" => config.ai.cloud.openai_api_key = Some(api_key),
+                "anthropic" | "Anthropic" => config.ai.cloud.anthropic_api_key = Some(api_key),
+                "gemini" | "Gemini" => config.ai.cloud.gemini_api_key = Some(api_key),
+                _ => {}
+            }
+        })
+    }
+
+    pub fn get_api_key(&self, provider: &str) -> Option<String> {
+        let config = self.get();
+        match provider {
+            "groq" | "Groq" => config.ai.cloud.groq_api_key,
+            "openai" | "OpenAI" => config.ai.cloud.openai_api_key,
+            "anthropic" | "Anthropic" => config.ai.cloud.anthropic_api_key,
+            "gemini" | "Gemini" => config.ai.cloud.gemini_api_key,
+            _ => None
+        }
+    }
+
+    pub fn watch_for_changes(&self, tx_notify: std::sync::mpsc::Sender<()>) -> Result<()> {
         use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
         use std::sync::mpsc::channel;
         use std::time::Duration;
@@ -436,6 +469,8 @@ impl ConfigManager {
                 std::thread::sleep(Duration::from_millis(100)); // Debounce
                 if let Err(e) = manager.reload() {
                     eprintln!("Failed to reload config: {}", e);
+                } else {
+                    let _ = tx_notify.send(());
                 }
             }
         });

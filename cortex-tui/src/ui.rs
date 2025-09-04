@@ -1,4 +1,7 @@
-use cortex_core::{ActivePanel, AppState, FileEntry, FileType, PanelState, VfsEntry, VfsEntryType};
+use cortex_core::{
+    state::{AppState, PanelState, ViewMode},
+    ActivePanel, FileEntry, FileType, VfsEntry, VfsEntryType,
+};
 use humansize;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -16,10 +19,10 @@ impl UI {
         let theme = app.theme_manager.get_current_theme();
 
         // FIRST: Fill entire terminal with theme background
-        Self::draw_background(frame, frame.area(), theme);
+        Self::draw_background(frame, frame.size(), theme);
 
         // Calculate command line height based on text width
-        let terminal_width = frame.area().width as usize;
+        let terminal_width = frame.size().width as usize;
         let prompt = "$ ";
         let prompt_width = prompt.width();
         let border_width = 2; // Left and right borders
@@ -52,7 +55,7 @@ impl UI {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(constraints)
-            .split(frame.area());
+            .split(frame.size());
 
         let (panels_area, command_output_area, command_area, status_area) =
             if app.command_output_visible {
@@ -70,14 +73,14 @@ impl UI {
             panels[0],
             &app.left_panel,
             app.active_panel == ActivePanel::Left,
-            theme,
+            app,
         );
         Self::draw_panel(
             frame,
             panels[1],
             &app.right_panel,
             app.active_panel == ActivePanel::Right,
-            theme,
+            app,
         );
 
         // Draw command output area if visible
@@ -94,21 +97,22 @@ impl UI {
         area: Rect,
         panel: &PanelState,
         is_active: bool,
-        theme: &cortex_core::Theme,
+        app: &AppState,
     ) {
+        let theme = app.theme_manager.get_current_theme();
         let border_style = theme.get_border_style(is_active);
 
         let title = if let Some(ref filter) = panel.filter {
             if panel.is_using_vfs() {
                 if let Some(ref vfs_path) = panel.current_vfs_path {
                     match vfs_path {
-                        cortex_core::VfsPath::Archive { .. } => {
+                        cortex_core::vfs::VfsPath::Archive { .. } => {
                             format!(" [Archive] [Filter: {}] ", filter)
                         }
-                        cortex_core::VfsPath::Sftp { host, username, .. } => {
+                        cortex_core::vfs::VfsPath::Sftp { host, username, .. } => {
                             format!(" [SFTP: {}@{}] [Filter: {}] ", username, host, filter)
                         }
-                        cortex_core::VfsPath::Ftp { host, username, .. } => {
+                        cortex_core::vfs::VfsPath::Ftp { host, username, .. } => {
                             format!(" [FTP: {}@{}] [Filter: {}] ", username, host, filter)
                         }
                         _ => format!(" [Remote] [Filter: {}] ", filter),
@@ -122,8 +126,8 @@ impl UI {
         } else if panel.is_using_vfs() {
             if let Some(ref vfs_path) = panel.current_vfs_path {
                 match vfs_path {
-                    cortex_core::VfsPath::Archive { .. } => " [Archive] ".to_string(),
-                    cortex_core::VfsPath::Sftp {
+                    cortex_core::vfs::VfsPath::Archive { .. } => " [Archive] ".to_string(),
+                    cortex_core::vfs::VfsPath::Sftp {
                         host,
                         username,
                         path,
@@ -131,7 +135,7 @@ impl UI {
                     } => {
                         format!(" [SFTP: {}@{}:{}] ", username, host, path)
                     }
-                    cortex_core::VfsPath::Ftp {
+                    cortex_core::vfs::VfsPath::Ftp {
                         host,
                         username,
                         path,
@@ -189,14 +193,14 @@ impl UI {
             entries[start_idx..end_idx]
                 .iter()
                 .enumerate()
-                .map(|(idx, entry)| {
+                .map(move |(idx, entry)| {
                     let absolute_idx = start_idx + idx;
                     let is_selected = absolute_idx == panel.selected_index;
                     let is_marked = panel.is_marked(&entry.path);
 
                     let style =
                         Self::get_entry_style(entry, is_selected, is_marked, is_active, theme);
-                    let content = Self::format_entry(entry, inner_area.width as usize);
+                    let content = Self::format_entry(entry, inner_area.width as usize, panel, &app.config_manager.get());
 
                     ListItem::new(Line::from(vec![Span::styled(content, style)]))
                 })
@@ -234,32 +238,79 @@ impl UI {
         style
     }
 
-    fn format_entry(entry: &FileEntry, width: usize) -> String {
+    fn format_entry(entry: &FileEntry, width: usize, panel: &PanelState, config: &cortex_core::Config) -> String {
+        let icon = if config.general.show_icons {
+            match entry.file_type {
+                FileType::Directory => " ",
+                FileType::Symlink => " ",
+                FileType::File => " ",
+                _ => "  ",
+            }
+        } else {
+            ""
+        };
+
         let type_indicator = match entry.file_type {
             FileType::Directory => "/",
             FileType::Symlink => "@",
             _ => "",
         };
 
-        let name_with_indicator = format!("{}{}", entry.name, type_indicator);
-        let size_str = &entry.size_display;
-        let size_width = size_str.width();
-
-        let available_width = width.saturating_sub(size_width + 2);
+        let name_with_indicator = format!("{}{}{}", icon, entry.name, type_indicator);
+        
+        // Build the info section based on view mode
+        let mut info_parts = Vec::new();
+        
+        match panel.view_mode {
+            ViewMode::Brief => {
+                // No info parts
+            }
+            ViewMode::Full => {
+                info_parts.push(entry.size_display.clone());
+                if let Some(modified) = entry.modified {
+                    info_parts.push(modified.format("%m-%d %H:%M").to_string());
+                }
+            }
+            ViewMode::Wide => {
+                info_parts.push(entry.size_display.clone());
+                info_parts.push(entry.permissions.clone());
+                if let Some(modified) = entry.modified {
+                    info_parts.push(modified.format("%m-%d %H:%M").to_string());
+                }
+            }
+        }
+        
+        let info_str = if info_parts.is_empty() {
+            String::new()
+        } else {
+            info_parts.join(" | ")
+        };
+        
+        let info_width = info_str.width();
+        let padding_needed = if info_width > 0 { 2 } else { 0 }; // Space for separator
+        let available_width = width.saturating_sub(info_width + padding_needed);
         let name_width = name_with_indicator.width();
 
         if name_width <= available_width {
             let padding = available_width - name_width;
-            format!(
-                "{}{:padding$} {}",
-                name_with_indicator,
-                "",
-                size_str,
-                padding = padding
-            )
+            if info_width > 0 {
+                format!(
+                    "{}{:padding$} {}",
+                    name_with_indicator,
+                    "",
+                    info_str,
+                    padding = padding
+                )
+            } else {
+                name_with_indicator
+            }
         } else {
             let truncated = Self::truncate_string(&name_with_indicator, available_width - 3);
-            format!("{}... {}", truncated, size_str)
+            if info_width > 0 {
+                format!("{}... {}", truncated, info_str)
+            } else {
+                format!("{}...", truncated)
+            }
         }
     }
 
@@ -397,10 +448,10 @@ impl UI {
 
         // Only show cursor if it's within the visible area
         if cursor_line < inner_area.height as usize {
-            frame.set_cursor_position((
+            frame.set_cursor(
                 inner_area.x + cursor_col as u16,
                 inner_area.y + cursor_line as u16,
-            ));
+);
         }
     }
 
@@ -525,7 +576,7 @@ impl UI {
             ("F6", "Move"),
             ("F7", "MkDir"),
             ("F8", "Delete"),
-            ("F9", "Theme"),
+            ("F9", "Config"),
             ("F10", "Quit"),
         ];
 

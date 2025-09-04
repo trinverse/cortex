@@ -72,7 +72,7 @@ impl PluginDialog {
     }
 
     pub fn render(&self, frame: &mut Frame) {
-        let area = centered_rect(80, 70, frame.area());
+        let area = centered_rect(80, 70, frame.size());
         frame.render_widget(Clear, area);
 
         if self.show_details && !self.plugins.is_empty() {

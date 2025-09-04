@@ -134,6 +134,7 @@ impl CommandProcessor {
         }
     }
 
+    #[allow(dead_code)] // TODO: Implement streaming command execution feature
     pub async fn execute_streaming_command_in_dir(
         command: &str,
         current_dir: &Path,
@@ -220,6 +221,7 @@ impl CommandProcessor {
         Ok(exit_code)
     }
 
+    #[allow(dead_code)] // TODO: Use this for advanced cd command parsing
     pub fn parse_cd_path(args: &str, current_dir: &Path) -> Option<PathBuf> {
         if args.is_empty() {
             return dirs::home_dir();

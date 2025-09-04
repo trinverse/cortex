@@ -24,18 +24,27 @@ All documentation is organized in the [`docs/`](./docs/) directory:
 
 ### Quick Install
 
-#### Ubuntu/Debian
-```bash
-# Download the .deb package from releases
-wget https://github.com/trinverse/cortex/releases/download/v0.1.0/cortex_0.1.0_amd64.deb
-sudo dpkg -i cortex_0.1.0_amd64.deb
-```
-
 #### Homebrew (macOS/Linux)
 ```bash
-# Add the tap
+# Add the tap and install
 brew tap trinverse/cortex
-brew install cortex
+brew install cortex-fm
+
+# Start the file manager
+cortex-fm
+```
+
+**Note:** The package is named `cortex-fm` to avoid conflicts with existing Homebrew packages.
+
+#### Ubuntu/Debian
+```bash
+# Option 1: Install via Homebrew (recommended)
+brew tap trinverse/cortex
+brew install cortex-fm
+
+# Option 2: Download .deb package (coming soon)
+wget https://github.com/trinverse/cortex/releases/download/v0.1.0/cortex_0.1.0_amd64.deb
+sudo dpkg -i cortex_0.1.0_amd64.deb
 ```
 
 ### From Source
@@ -72,14 +81,16 @@ Download the MSI installer from the [releases page](https://github.com/trinverse
 
 ```bash
 # Launch in current directory
-cortex
+cortex-fm
 
 # Launch in specific directory
-cortex /path/to/directory
+cortex-fm /path/to/directory
 
 # Show version
-cortex --version
+cortex-fm --version
 ```
+
+**Note:** If installed via Homebrew, use `cortex-fm` command. If built from source or installed via .deb, use `cortex`.
 
 ### AI Assistant
 

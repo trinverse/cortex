@@ -17,7 +17,7 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 # Configuration
-VERSION="0.1.0"
+VERSION="0.1.2"
 GITHUB_REPO="trinverse/cortex"
 WORKFLOW="publish-ppa-all.yml"
 

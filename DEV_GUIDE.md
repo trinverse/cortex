@@ -52,7 +52,7 @@ While developing, these shortcuts are useful:
 
 - **Ctrl+Q** - Quit Cortex (to reload after changes)
 - **F1** - Show help
-- **F9** - Cycle through themes
+- **F9** - Open configuration dialog
 - **F10** - Toggle random theme mode
 
 ## Tips

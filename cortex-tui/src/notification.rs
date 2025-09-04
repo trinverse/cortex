@@ -257,7 +257,7 @@ impl NotificationManager {
             return;
         }
 
-        let area = frame.area();
+        let area = frame.size();
         let notification_width = 40;
         let notification_height = 4;
         let margin = 1;

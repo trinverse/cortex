@@ -1,0 +1,23 @@
+This is a test file for F3 viewer.
+
+Line 1: Hello World
+Line 2: Testing file viewer functionality 
+Line 3: This should be visible in read-only mode
+Line 4: Function keys are working!
+Line 5: F3 = View file
+Line 6: F4 = Edit file
+Line 7: F5 = Copy files
+Line 8: F6 = Move files
+Line 9: F7 = Create directory
+Line 10: F8 = Delete files
+
+This content should now be visible when pressing F3 on this file.
+The viewer supports:
+- Scrolling with arrow keys
+- Page Up/Down for faster navigation
+- Search with / key
+- Toggle hex mode with H key
+- Toggle word wrap with W key
+- ESC to close viewer
+
+End of test file.

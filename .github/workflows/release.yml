@@ -1,0 +1,184 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v0.2.0)'
+        required: true
+        default: 'v0.1.2'
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      tag: ${{ steps.get_tag.outputs.tag }}
+    steps:
+      - name: Get tag
+        id: get_tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_tag.outputs.tag }}
+          release_name: Release ${{ steps.get_tag.outputs.tag }}
+          draft: true
+          prerelease: false
+
+  build-linux:
+    needs: create-release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            archive: x86_64-linux
+          - target: aarch64-unknown-linux-gnu
+            archive: aarch64-linux
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      
+      - name: Install cross-compilation tools for ARM64
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+      
+      - name: Build release binary
+        run: |
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+            export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
+            export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
+          fi
+          cargo build --release --target ${{ matrix.target }}
+      
+      - name: Create tarball
+        run: |
+          mkdir -p dist
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../dist/cortex-${tag#v}-${{ matrix.archive }}.tar.gz cortex
+        env:
+          tag: ${{ needs.create-release.outputs.tag }}
+      
+      - name: Calculate SHA256
+        id: sha256
+        run: |
+          sha256sum dist/*.tar.gz | awk '{print $1}' > sha256.txt
+          echo "sha256=$(cat sha256.txt)" >> $GITHUB_OUTPUT
+      
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: dist/cortex-${{ needs.create-release.outputs.tag }}-${{ matrix.archive }}.tar.gz
+          asset_name: cortex-${{ needs.create-release.outputs.tag }}-${{ matrix.archive }}.tar.gz
+          asset_content_type: application/gzip
+
+  build-macos:
+    needs: create-release
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            archive: x86_64-apple-darwin
+          - target: aarch64-apple-darwin
+            archive: aarch64-apple-darwin
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      
+      - name: Build release binary
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+      
+      - name: Create tarball
+        run: |
+          mkdir -p dist
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../dist/cortex-${{ needs.create-release.outputs.tag }}-${{ matrix.archive }}.tar.gz cortex
+      
+      - name: Calculate SHA256
+        id: sha256
+        run: |
+          shasum -a 256 dist/*.tar.gz | awk '{print $1}' > sha256.txt
+          echo "sha256=$(cat sha256.txt)" >> $GITHUB_OUTPUT
+      
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: dist/cortex-${{ needs.create-release.outputs.tag }}-${{ matrix.archive }}.tar.gz
+          asset_name: cortex-${{ needs.create-release.outputs.tag }}-${{ matrix.archive }}.tar.gz
+          asset_content_type: application/gzip
+
+  update-homebrew-formula:
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      
+      - name: Download and calculate SHA256 for all releases
+        run: |
+          TAG=${{ needs.create-release.outputs.tag }}
+          VERSION=${TAG#v}
+          
+          # Download all release assets
+          gh release download $TAG --pattern "*.tar.gz" --dir ./downloads
+          
+          # Calculate SHA256 for each file
+          LINUX_X86_SHA=$(sha256sum downloads/cortex-${VERSION}-x86_64-linux.tar.gz | awk '{print $1}')
+          MACOS_X86_SHA=$(sha256sum downloads/cortex-${TAG}-x86_64-apple-darwin.tar.gz | awk '{print $1}')
+          MACOS_ARM_SHA=$(sha256sum downloads/cortex-${TAG}-aarch64-apple-darwin.tar.gz | awk '{print $1}')
+          
+          # Update the Homebrew formula
+          sed -i "s/PENDING_LINUX_X86_64_SHA256/${LINUX_X86_SHA}/" Formula/cortex-fm.rb
+          sed -i "s/PENDING_MACOS_X86_64_SHA256/${MACOS_X86_SHA}/" Formula/cortex-fm.rb
+          sed -i "s/PENDING_MACOS_ARM64_SHA256/${MACOS_ARM_SHA}/" Formula/cortex-fm.rb
+          
+          # Calculate source tarball SHA256
+          curl -L "https://github.com/trinverse/cortex/archive/refs/tags/${TAG}.tar.gz" -o source.tar.gz
+          SOURCE_SHA=$(sha256sum source.tar.gz | awk '{print $1}')
+          sed -i "s/PENDING_SOURCE_SHA256/${SOURCE_SHA}/" Formula/cortex-fm.rb
+        env:
+          GH_TOKEN: ${{ github.token }}
+      
+      - name: Commit updated formula
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add Formula/cortex-fm.rb
+          git commit -m "Update Homebrew formula for ${{ needs.create-release.outputs.tag }}"
+          git push

@@ -58,6 +58,26 @@ impl OperationManager {
         Ok(())
     }
 
+    pub async fn delete_files(&mut self, targets: Vec<PathBuf>) -> Result<()> {
+        for target in targets {
+            let op = Operation::Delete {
+                path: target,
+            };
+
+            // Create a channel for progress updates
+            let (tx, mut rx) = mpsc::channel(100);
+
+            // Execute the operation
+            self.handler.execute(op, tx).await?;
+
+            // Drain any remaining progress messages
+            while rx.try_recv().is_ok() {}
+        }
+
+        Ok(())
+    }
+
+    #[allow(dead_code)]
     pub async fn prepare_copy(state: &AppState) -> Option<FileOperation> {
         let source_panel = state.active_panel();
         let dest_panel = state.inactive_panel();
@@ -80,6 +100,7 @@ impl OperationManager {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn prepare_move(state: &AppState) -> Option<FileOperation> {
         let source_panel = state.active_panel();
         let dest_panel = state.inactive_panel();
@@ -102,6 +123,7 @@ impl OperationManager {
         })
     }
 
+    #[allow(dead_code)] // TODO: Use this for delete operation preparation
     pub async fn prepare_delete(state: &AppState) -> Option<FileOperation> {
         let panel = state.active_panel();
 
@@ -120,6 +142,7 @@ impl OperationManager {
         Some(FileOperation::Delete { targets })
     }
 
+    #[allow(dead_code)] // TODO: Use this for trash delete operation preparation
     pub async fn prepare_delete_to_trash(state: &AppState) -> Option<FileOperation> {
         let panel = state.active_panel();
 
@@ -138,6 +161,7 @@ impl OperationManager {
         Some(FileOperation::DeleteToTrash { targets })
     }
 
+    #[allow(dead_code)] // TODO: Use this for clipboard copy operation preparation
     pub async fn prepare_copy_to_clipboard(state: &AppState) -> Option<FileOperation> {
         let panel = state.active_panel();
 
@@ -156,6 +180,7 @@ impl OperationManager {
         Some(FileOperation::CopyToClipboard { paths })
     }
 
+    #[allow(dead_code)] // TODO: Use this for clipboard paste operation preparation
     pub async fn prepare_paste_from_clipboard(state: &AppState) -> Option<FileOperation> {
         let panel = state.active_panel();
         let destination = panel.current_dir.clone();
@@ -163,6 +188,7 @@ impl OperationManager {
         Some(FileOperation::PasteFromClipboard { destination })
     }
 
+    #[allow(dead_code)] // TODO: Use this for operation execution with progress tracking
     pub async fn execute_operation(
         &mut self,
         operation: FileOperation,
@@ -318,11 +344,21 @@ impl OperationManager {
 
                 self.handler.execute(op, tx).await?;
             }
+            FileOperation::CopyAs { .. } => {
+                todo!()
+            }
+            FileOperation::CreateFile { .. } => {
+                todo!()
+            }
+            FileOperation::Filter { .. } => {
+                todo!()
+            }
         }
 
         Ok(())
     }
 
+    #[allow(dead_code)] // TODO: Use this for operation confirmation dialogs
     pub fn create_confirm_dialog(operation: &FileOperation) -> Dialog {
         let (title, message) = match operation {
             FileOperation::Copy {
@@ -401,6 +437,20 @@ impl OperationManager {
                     "Rename",
                     format!("Rename '{}' to '{}'?", old_name, new_name),
                 )
+            }
+            FileOperation::CopyAs { source, new_name, .. } => {
+                let source_name = source.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                (
+                    "Copy As",
+                    format!("Copy '{}' as '{}'?", source_name, new_name),
+                )
+            }
+            FileOperation::CreateFile { path } => {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                ("Create File", format!("Create file '{}'?", name))
+            }
+            FileOperation::Filter { filter } => {
+                ("Filter", format!("Apply filter '{}'?", filter))
             }
         };
 
