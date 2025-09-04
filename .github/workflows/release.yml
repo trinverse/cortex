@@ -9,176 +9,527 @@ on:
       tag:
         description: 'Release tag (e.g., v0.2.0)'
         required: true
-        default: 'v0.1.2'
 
 jobs:
-  create-release:
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      tag: ${{ steps.get_tag.outputs.tag }}
-    steps:
-      - name: Get tag
-        id: get_tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.get_tag.outputs.tag }}
-          release_name: Release ${{ steps.get_tag.outputs.tag }}
-          draft: true
-          prerelease: false
-
-  build-linux:
-    needs: create-release
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.os }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
-            archive: x86_64-linux
-          - target: aarch64-unknown-linux-gnu
-            archive: aarch64-linux
-    
+          - os: macos
+            arch: x86_64
+            runner: macos-13
+            target: x86_64-apple-darwin
+          - os: macos
+            arch: aarch64
+            runner: macos-14
+            target: aarch64-apple-darwin
+          - os: linux
+            arch: x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: linux
+            arch: aarch64
+            runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: windows
+            arch: x86_64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-      
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      
-      - name: Install cross-compilation tools for ARM64
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
+
+      - name: Install cross-compilation tools for Linux ARM64
+        if: matrix.os == 'linux' && matrix.arch == 'aarch64'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-      
+
       - name: Build release binary
         run: |
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-            export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
-            export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
           fi
           cargo build --release --target ${{ matrix.target }}
+        shell: bash
       
-      - name: Create tarball
+      - name: Get Version
+        id: get_version
         run: |
-          mkdir -p dist
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../dist/cortex-${tag#v}-${{ matrix.archive }}.tar.gz cortex
-        env:
-          tag: ${{ needs.create-release.outputs.tag }}
-      
-      - name: Calculate SHA256
-        id: sha256
-        run: |
-          sha256sum dist/*.tar.gz | awk '{print $1}' > sha256.txt
-          echo "sha256=$(cat sha256.txt)" >> $GITHUB_OUTPUT
-      
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: dist/cortex-${{ needs.create-release.outputs.tag }}-${{ matrix.archive }}.tar.gz
-          asset_name: cortex-${{ needs.create-release.outputs.tag }}-${{ matrix.archive }}.tar.gz
-          asset_content_type: application/gzip
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
 
-  build-macos:
-    needs: create-release
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-apple-darwin
-            archive: x86_64-apple-darwin
-          - target: aarch64-apple-darwin
-            archive: aarch64-apple-darwin
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-      
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      
-      - name: Build release binary
-        run: |
-          cargo build --release --target ${{ matrix.target }}
-      
-      - name: Create tarball
-        run: |
-          mkdir -p dist
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../dist/cortex-${{ needs.create-release.outputs.tag }}-${{ matrix.archive }}.tar.gz cortex
-      
-      - name: Calculate SHA256
-        id: sha256
-        run: |
-          shasum -a 256 dist/*.tar.gz | awk '{print $1}' > sha256.txt
-          echo "sha256=$(cat sha256.txt)" >> $GITHUB_OUTPUT
-      
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
+      - name: Package and Sign (macOS)
+        if: matrix.os == 'macos'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: dist/cortex-${{ needs.create-release.outputs.tag }}-${{ matrix.archive }}.tar.gz
-          asset_name: cortex-${{ needs.create-release.outputs.tag }}-${{ matrix.archive }}.tar.gz
-          asset_content_type: application/gzip
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Create a temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
 
-  update-homebrew-formula:
-    needs: [build-linux, build-macos]
+          # Import the certificate
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+
+          # Sign the binary
+          codesign --keychain build.keychain --sign "Developer ID Application" --force --timestamp --options=runtime "target/${{ matrix.target }}/release/cortex"
+
+          # Package into a tarball
+          VERSION=${{ steps.get_version.outputs.tag }}
+          ARTIFACT_DIR="dist"
+          mkdir -p $ARTIFACT_DIR
+          tar -czf "$ARTIFACT_DIR/cortex-${VERSION}-${{ matrix.target }}.tar.gz" -C "target/${{ matrix.target }}/release" cortex
+
+          # Notarize the tarball
+          xcrun notarytool submit "$ARTIFACT_DIR/cortex-${VERSION}-${{ matrix.target }}.tar.gz" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+
+          # Staple the notarization ticket
+          xcrun stapler staple "$ARTIFACT_DIR/cortex-${VERSION}-${{ matrix.target }}.tar.gz"
+
+        shell: bash
+
+      - name: Package (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          VERSION=${{ steps.get_version.outputs.tag }}
+          ARTIFACT_DIR="dist"
+          mkdir -p $ARTIFACT_DIR
+          tar -czf "$ARTIFACT_DIR/cortex-${VERSION}-${{ matrix.target }}.tar.gz" -C "target/${{ matrix.target }}/release" cortex
+        shell: bash
+
+      - name: Package and Sign (Windows)
+        if: matrix.os == 'windows'
+        env:
+          WINDOWS_SIGNING_PFX_B64: ${{ secrets.WINDOWS_SIGNING_PFX_B64 }}
+          WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+        run: |
+          $VERSION = "${{ steps.get_version.outputs.tag }}"
+          $VERSION_NO_V = $VERSION.Substring(1)
+          $ARTIFACT_DIR = "dist"
+          New-Item -ItemType Directory -Force -Path $ARTIFACT_DIR
+
+          # Install WiX Toolset
+          choco install wix -y
+
+          # These GUIDs should be generated once and remain constant for the project.
+          $PRODUCT_CODE_GUID = "6F72D243-764D-428D-912D-43489375543E"
+          $UPGRADE_CODE_GUID = "E51842E6-55E3-406A-8173-051515A36A81"
+
+          # Build MSI
+          $MSI_PATH = "$ARTIFACT_DIR/cortex-$VERSION-x86_64.msi"
+          wix build packaging/windows/cortex.wxs `
+              -d Version=$VERSION_NO_V `
+              -d Platform=x64 `
+              -d ProductCode=$PRODUCT_CODE_GUID `
+              -d UpgradeCode=$UPGRADE_CODE_GUID `
+              -d SourceDir="target/${{ matrix.target }}/release" `
+              -out $MSI_PATH
+
+          # Sign the MSI if secrets are present
+          if (-not [string]::IsNullOrEmpty($env:WINDOWS_SIGNING_PFX_B64)) {
+              echo "Signing MSI..."
+              $pfx_cert_byte = [System.Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX_B64)
+              $pfx_cert_path = "cert.pfx"
+              [System.IO.File]::WriteAllBytes($pfx_cert_path, $pfx_cert_byte)
+
+              & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.17763.0\x64\signtool.exe" sign /f $pfx_cert_path /p $env:WINDOWS_SIGNING_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $MSI_PATH
+          }
+        shell: powershell
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-${{ matrix.target }}
+          path: dist/*
+
+  create-release:
+    name: Create GitHub Release
+    needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-      
-      - name: Download and calculate SHA256 for all releases
+      - name: Get Version
+        id: get_version
         run: |
-          TAG=${{ needs.create-release.outputs.tag }}
-          VERSION=${TAG#v}
-          
-          # Download all release assets
-          gh release download $TAG --pattern "*.tar.gz" --dir ./downloads
-          
-          # Calculate SHA256 for each file
-          LINUX_X86_SHA=$(sha256sum downloads/cortex-${VERSION}-x86_64-linux.tar.gz | awk '{print $1}')
-          MACOS_X86_SHA=$(sha256sum downloads/cortex-${TAG}-x86_64-apple-darwin.tar.gz | awk '{print $1}')
-          MACOS_ARM_SHA=$(sha256sum downloads/cortex-${TAG}-aarch64-apple-darwin.tar.gz | awk '{print $1}')
-          
-          # Update the Homebrew formula
-          sed -i "s/PENDING_LINUX_X86_64_SHA256/${LINUX_X86_SHA}/" Formula/cortex-fm.rb
-          sed -i "s/PENDING_MACOS_X86_64_SHA256/${MACOS_X86_SHA}/" Formula/cortex-fm.rb
-          sed -i "s/PENDING_MACOS_ARM64_SHA256/${MACOS_ARM_SHA}/" Formula/cortex-fm.rb
-          
-          # Calculate source tarball SHA256
-          curl -L "https://github.com/trinverse/cortex/archive/refs/tags/${TAG}.tar.gz" -o source.tar.gz
-          SOURCE_SHA=$(sha256sum source.tar.gz | awk '{print $1}')
-          sed -i "s/PENDING_SOURCE_SHA256/${SOURCE_SHA}/" Formula/cortex-fm.rb
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List downloaded artifacts
+        run: ls -R artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Cortex ${{ steps.get_version.outputs.tag }}
+          tag_name: ${{ steps.get_version.outputs.tag }}
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/cortex-x86_64-apple-darwin/*
+            artifacts/cortex-aarch64-apple-darwin/*
+            artifacts/cortex-x86_64-unknown-linux-gnu/*
+            artifacts/cortex-aarch64-unknown-linux-gnu/*
+            artifacts/cortex-x86_64-pc-windows-msvc/*
+          body: |
+            # Cortex ${{ steps.get_version.outputs.tag }}
+
+            A modern terminal file manager with a dual-pane interface, vim-style navigation, and plugin support.
+
+            ## Installation
+
+            ### Homebrew (macOS / Linux)
+            ```bash
+            brew install cortex
+            ```
+
+            ### Chocolatey (Windows)
+            ```bash
+            choco install cortex
+            ```
+
+            ### Winget (Windows)
+            ```bash
+            winget install cortex
+            ```
+
+            ### Ubuntu/Debian (PPA)
+            ```bash
+            sudo add-apt-repository ppa:ashishtyagi10/cortex
+            sudo apt update
+            sudo apt install cortex
+            ```
+
+            ### Manual Download
+            Download the appropriate binary for your system from the assets below.
         env:
-          GH_TOKEN: ${{ github.token }}
-      
-      - name: Commit updated formula
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-homebrew:
+    name: Publish to Homebrew
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Version
+        id: get_version
         run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v5
+        with:
+          repository: trinverse/homebrew-cortex
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Download release assets
+        run: |
+          VERSION=${{ steps.get_version.outputs.tag }}
+          mkdir -p assets
+          gh release download $VERSION --dir assets --pattern "cortex-*.tar.gz"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew formula
+        run: |
+          VERSION=${{ steps.get_version.outputs.tag }}
+          VERSION_NO_V=${VERSION#v}
+
+          DARWIN_X64_SHA=$(sha256sum assets/cortex-${VERSION}-x86_64-apple-darwin.tar.gz | awk '{print $1}')
+          DARWIN_ARM64_SHA=$(sha256sum assets/cortex-${VERSION}-aarch64-apple-darwin.tar.gz | awk '{print $1}')
+          LINUX_X64_SHA=$(sha256sum assets/cortex-${VERSION}-x86_64-unknown-linux-gnu.tar.gz | awk '{print $1}')
+          LINUX_ARM64_SHA=$(sha256sum assets/cortex-${VERSION}-aarch64-unknown-linux-gnu.tar.gz | awk '{print $1}')
+
+          cat > homebrew-tap/Formula/cortex.rb << EOF
+          class Cortex < Formula
+            desc "A modern terminal file manager"
+            homepage "https://github.com/trinverse/cortex"
+            version "$VERSION_NO_V"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.intel?
+                url "https://github.com/trinverse/cortex/releases/download/$VERSION/cortex-$VERSION-x86_64-apple-darwin.tar.gz"
+                sha256 "$DARWIN_X64_SHA"
+              else
+                url "https://github.com/trinverse/cortex/releases/download/$VERSION/cortex-$VERSION-aarch64-apple-darwin.tar.gz"
+                sha256 "$DARWIN_ARM64_SHA"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.intel?
+                url "https://github.com/trinverse/cortex/releases/download/$VERSION/cortex-$VERSION-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "$LINUX_X64_SHA"
+              else
+                url "https://github.com/trinverse/cortex/releases/download/$VERSION/cortex-$VERSION-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "$LINUX_ARM64_SHA"
+              end
+            end
+
+            def install
+              bin.install "cortex"
+            end
+
+            test do
+              assert_match "cortex $VERSION_NO_V", shell_output("#{bin}/cortex --version")
+            end
+          end
+          EOF
+
+      - name: Commit and push to Homebrew tap
+        run: |
+          VERSION=${{ steps.get_version.outputs.tag }}
+          cd homebrew-tap
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add Formula/cortex-fm.rb
-          git commit -m "Update Homebrew formula for ${{ needs.create-release.outputs.tag }}"
+          git add Formula/cortex.rb
+          git commit -m "Update cortex to ${VERSION}"
           git push
+
+  publish-chocolatey:
+    name: Publish to Chocolatey
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - name: Get Version
+        id: get_version
+        run: |
+          if (-not [string]::IsNullOrEmpty("${{ github.event.inputs.tag }}")) {
+            $tag = "${{ github.event.inputs.tag }}"
+          } else {
+            $tag = "${{ github.ref }}".Split('/')[-1]
+          }
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
+        shell: powershell
+
+      - name: Download MSI from release
+        run: |
+          $VERSION = "${{ steps.get_version.outputs.tag }}"
+          $url = "https://github.com/${{ github.repository }}/releases/download/$VERSION/cortex-$VERSION-x86_64.msi"
+          Invoke-WebRequest -Uri $url -OutFile cortex.msi
+        shell: powershell
+
+      - name: Calculate checksum
+        id: checksum
+        run: |
+          $hash = (Get-FileHash -Path cortex.msi -Algorithm SHA256).Hash.ToLower()
+          echo "sha256=$hash" >> $env:GITHUB_OUTPUT
+        shell: powershell
+
+      - name: Create Chocolatey package
+        run: |
+          $VERSION = "${{ steps.get_version.outputs.tag }}".TrimStart('v')
+          $CHECKSUM = "${{ steps.checksum.outputs.sha256 }}"
+          $REPO_URL = "https://github.com/${{ github.repository }}"
+
+          New-Item -ItemType Directory -Force -Path "choco-pkg/tools"
+
+          # Create .nuspec file
+          $nuspecContent = @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+            <metadata>
+              <id>cortex-fm</id>
+              <version>$VERSION</version>
+              <title>Cortex File Manager</title>
+              <authors>trinverse</authors>
+              <projectUrl>$REPO_URL</projectUrl>
+              <description>A modern terminal file manager.</description>
+              <tags>file-manager terminal cli rust</tags>
+              <releaseNotes>$REPO_URL/releases/tag/v$VERSION</releaseNotes>
+            </metadata>
+            <files>
+              <file src="tools\**" target="tools" />
+            </files>
+          </package>
+          "@
+          $nuspecContent | Out-File -FilePath "choco-pkg/cortex-fm.nuspec" -Encoding utf8
+
+          # Create chocolateyinstall.ps1
+          $installScript = @"
+          `$ErrorActionPreference = 'Stop'
+          `$packageName = 'cortex-fm'
+          `$fileType = 'MSI'
+          `$url = "$REPO_URL/releases/download/v$VERSION/cortex-v$VERSION-x86_64.msi"
+          `$checksum = '$CHECKSUM'
+
+          `$installArgs = @{
+            packageName    = `$packageName
+            fileType       = `$fileType
+            url            = `$url
+            checksum       = `$checksum
+            checksumType   = 'sha256'
+            silentArgs     = "/qn /norestart"
+            validExitCodes = @(0, 3010, 1641)
+          }
+          Install-ChocolateyPackage @installArgs
+          "@
+          $installScript | Out-File -FilePath "choco-pkg/tools/chocolateyinstall.ps1" -Encoding utf8
+        shell: powershell
+
+      - name: Pack Chocolatey package
+        run: |
+          cd choco-pkg
+          choco pack
+        shell: bash
+
+      - name: Push to Chocolatey
+        env:
+          CHOCO_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+        run: |
+          $VERSION = "${{ steps.get_version.outputs.tag }}".TrimStart('v')
+          choco push "cortex-fm.$VERSION.nupkg" --source https://push.chocolatey.org/ --api-key "$env:CHOCO_API_KEY"
+        shell: powershell
+
+  trigger-ppa-publish:
+    name: Trigger PPA Publish
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Version
+        id: get_version
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG=${{ github.event.inputs.tag }}
+          else
+            TAG=${GITHUB_REF#refs/tags/}
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "tag_no_v=${TAG#v}" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Trigger PPA workflow
+        run: |
+          gh workflow run publish-ppa-all.yml -f version=${{ steps.get_version.outputs.tag_no_v }} -f distribution=all
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+
+  publish-winget:
+    name: Publish to Winget
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Version
+        id: get_version
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG=${{ github.event.inputs.tag }}
+          else
+            TAG=${GITHUB_REF#refs/tags/}
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "tag_no_v=${TAG#v}" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Download MSI and get hash
+        id: download_msi
+        run: |
+          VERSION=${{ steps.get_version.outputs.tag }}
+          URL="https://github.com/${{ github.repository }}/releases/download/$VERSION/cortex-$VERSION-x86_64.msi"
+          wget -q -O cortex.msi $URL
+          MSI_HASH=$(sha256sum cortex.msi | awk '{print $1}')
+          echo "msi_url=$URL" >> $GITHUB_OUTPUT
+          echo "msi_hash=$MSI_HASH" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Fork and clone winget-pkgs
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_PAT }}
+        run: |
+          gh repo fork microsoft/winget-pkgs --clone --fork-name winget-pkgs-fork
+          cd winget-pkgs-fork
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Create Winget manifest
+        run: |
+          VERSION_NO_V=${{ steps.get_version.outputs.tag_no_v }}
+          MANIFEST_DIR="winget-pkgs-fork/manifests/t/trinverse/cortex/$VERSION_NO_V"
+          mkdir -p $MANIFEST_DIR
+
+          # Create installer manifest
+          cat > $MANIFEST_DIR/trinverse.cortex.installer.yaml << EOF
+          PackageIdentifier: trinverse.cortex
+          PackageVersion: $VERSION_NO_V
+          InstallerType: msi
+          Installers:
+            - Architecture: x64
+              InstallerUrl: ${{ steps.download_msi.outputs.msi_url }}
+              InstallerSha256: ${{ steps.download_msi.outputs.msi_hash }}
+              ProductCode: '{6F72D243-764D-428D-912D-43489375543E}'
+          EOF
+
+          # Create locale manifest
+          cat > $MANIFEST_DIR/trinverse.cortex.locale.en-US.yaml << EOF
+          PackageIdentifier: trinverse.cortex
+          PackageVersion: $VERSION_NO_V
+          PackageLocale: en-US
+          Publisher: trinverse
+          PublisherUrl: https://github.com/trinverse
+          PublisherSupportUrl: https://github.com/trinverse/cortex/issues
+          Author: trinverse
+          PackageName: Cortex File Manager
+          PackageUrl: https://github.com/trinverse/cortex
+          License: MIT
+          LicenseUrl: https://github.com/trinverse/cortex/blob/main/LICENSE
+          ShortDescription: A modern terminal file manager.
+          Tags:
+            - file-manager
+            - terminal
+            - cli
+            - rust
+          EOF
+
+          # Create main manifest
+          cat > $MANIFEST_DIR/trinverse.cortex.yaml << EOF
+          PackageIdentifier: trinverse.cortex
+          PackageVersion: $VERSION_NO_V
+          DefaultLocale: en-US
+          ManifestType: version
+          ManifestVersion: 1.0.0
+          EOF
+
+      - name: Commit and create PR
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_PAT }}
+        run: |
+          cd winget-pkgs-fork
+          git checkout -b cortex-${{ steps.get_version.outputs.tag_no_v }}
+          git add .
+          git commit -m "Add cortex ${{ steps.get_version.outputs.tag_no_v }}"
+          git push -u origin cortex-${{ steps.get_version.outputs.tag_no_v }}
+          gh pr create --repo microsoft/winget-pkgs --title "Add cortex ${{ steps.get_version.outputs.tag_no_v }}" --body "New version of cortex file manager" --base master
