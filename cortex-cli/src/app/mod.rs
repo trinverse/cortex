@@ -225,6 +225,27 @@ impl App {
         
         Ok(())
     }
+
+    pub async fn suspend_and_run_command(&mut self, command: &str, args: &[&str]) -> Result<()> {
+        self.cleanup_terminal_on_drop()?;
+        let mut cmd = tokio::process::Command::new(command)
+            .args(args)
+            .spawn()?;
+        cmd.wait().await?;
+        self.reinitialize_terminal()?;
+        Ok(())
+    }
+
+    fn reinitialize_terminal(&mut self) -> Result<()> {
+        crossterm::terminal::enable_raw_mode()?;
+        crossterm::execute!(
+            self.terminal.backend_mut(),
+            crossterm::terminal::EnterAlternateScreen,
+            crossterm::event::EnableMouseCapture
+        )?;
+        self.terminal.clear()?;
+        Ok(())
+    }
 }
 
 impl Drop for App {

@@ -129,6 +129,8 @@ impl App {
             Action::CreateDirectory => self.handle_create_directory_operation().await?,
             Action::Rename => self.handle_rename_operation().await?,
             Action::NewFile => self.handle_new_file_operation().await?,
+            Action::ViewFile => self.handle_view_file_operation().await?,
+            Action::EditFile => self.handle_edit_file_operation().await?,
 
             // Sorting
             Action::SortByName => {
@@ -842,6 +844,46 @@ impl App {
     /// Handle context menu input
     async fn handle_context_menu_input(&mut self, _key_event: KeyEvent) -> Result<()> {
         // TODO: Implement context menu handling
+        Ok(())
+    }
+
+    async fn handle_edit_file_operation(&mut self) -> Result<()> {
+        if let Some(entry) = self.state.active_panel().current_entry().cloned() {
+            if entry.file_type == cortex_core::fs::FileType::File {
+                let editor = self.state.config_manager.get().general.editor;
+                self.suspend_and_run_command(&editor, &[&entry.path.to_string_lossy()])
+                    .await?;
+                self.refresh_needed = true;
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_view_file_operation(&mut self) -> Result<()> {
+        if let Some(entry) = self.state.active_panel().current_entry().cloned() {
+            if entry.file_type == cortex_core::fs::FileType::File {
+                match cortex_tui::viewer::FileViewer::new(&entry.path) {
+                    Ok(mut viewer) => {
+                        // Load initial content
+                        let height = self.terminal.size()?.height as usize;
+                        if let Err(e) = viewer.load_content(height.saturating_sub(5)) {
+                            self.dialog = Some(Dialog::Error(cortex_tui::ErrorDialog::new(format!(
+                                "Failed to read file: {}",
+                                e
+                            ))));
+                        } else {
+                            self.dialog = Some(Dialog::Viewer(cortex_tui::ViewerDialog::new(viewer)));
+                        }
+                    }
+                    Err(e) => {
+                        self.dialog = Some(Dialog::Error(cortex_tui::ErrorDialog::new(format!(
+                            "Failed to open file: {}",
+                            e
+                        ))));
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }

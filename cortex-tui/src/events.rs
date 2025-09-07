@@ -142,6 +142,10 @@ impl KeyBinding {
             (KeyCode::PageDown, _) => Some(Self::PageDown),
             (KeyCode::Tab, _) => Some(Self::Tab),
 
+            (KeyCode::F(2), _) => Some(Self::Rename),
+            (KeyCode::F(3), _) => Some(Self::ViewFile),
+            (KeyCode::F(4), _) => Some(Self::EditFile),
+
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => Some(Self::Rename),
 
             (KeyCode::Char('/'), _) => Some(Self::Search),
