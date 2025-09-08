@@ -52,7 +52,7 @@ regex = "1.10"
 zip = "4.3"
 ssh2 = "0.9"
 url = "2.5"
-suppaftp = { version = "6.0", features = ["async", "async-native-tls"] }
+suppaftp = { version = "7.0", features = ["async", "async-native-tls"] }
 tar = "0.4"
 flate2 = "1.0"
 sevenz-rust = "0.6"
